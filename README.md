@@ -26,21 +26,28 @@ Carte interactive style BD des **bars et restaurants de Bordeaux**, pensée pour
 Les prix : **€** pas cher (moins de 15 €/pers.), **€€** moyen (15 à 35 €), **€€€** élevé (plus de 35 €).
 OpenStreetMap ne donne pas les prix : ils sont **estimés** selon le type de lieu, à corriger dans les fiches.
 
-## 🚀 Mettre l'app en ligne (gratuit)
+## 🌍 L'app en ligne
 
-L'app est un simple dossier de fichiers statiques, sans serveur ni base de données.
+👉 **<https://ubik2077.github.io/bordeaux-a-la-carte/>**
 
-**Option 1 : Netlify (le plus simple)**
-1. Créez un compte gratuit sur <https://app.netlify.com>.
-2. Menu *Sites* → *Add new site* → *Deploy manually*, puis glissez-déposez **tout le dossier** du projet.
-3. Netlify vous donne une adresse du type `https://bordeaux-a-la-carte.netlify.app`. Vous pouvez la renommer dans *Site configuration*.
-4. Pour une mise à jour : *Deploys* → glissez à nouveau le dossier.
+Hébergée gratuitement par GitHub Pages, depuis le dépôt <https://github.com/Ubik2077/bordeaux-a-la-carte>.
+Le QR code [qr-installation.svg](qr-installation.svg) mène à cette adresse : imprimez-le ou affichez-le pour
+installer l'app sur les téléphones de l'équipe.
 
-**Option 2 : GitHub Pages**
-Déposez le dossier dans un dépôt GitHub, puis *Settings → Pages → Deploy from branch (main, /root)*.
+**Publier une modification** : chaque envoi (push) sur la branche `main` met le site à jour en 1 à 2 minutes.
 
-> ⚠️ L'adresse publique est accessible à toute personne qui la connaît. Elle ne contient aucune donnée
+```bash
+git add -A && git commit -m "Mise à jour" && git push
+```
+
+Sans ligne de commande : sur la page GitHub du dépôt, ouvrez le dossier voulu (par exemple `data/`), puis
+*Add file → Upload files*, déposez le fichier et validez avec *Commit changes*.
+
+> ⚠️ L'adresse est publique : toute personne qui la connaît peut ouvrir l'app. Elle ne contient aucune donnée
 > personnelle, seulement des lieux publics et les notes que vous publiez dans `data/equipe.json`.
+
+**Autre hébergeur (Netlify…)** : lancez `sh scripts/preparer-publication.sh`. Vous obtenez un dossier
+`publication/` et une archive `bordeaux-a-la-carte.zip` qui ne contiennent que l'app, prêts à glisser-déposer.
 
 ## 📲 Installer sur chaque appareil
 
@@ -56,8 +63,8 @@ Ensuite l'app s'ouvre comme une application et fonctionne **sans connexion**.
 Les étoiles, coups de cœur, prix corrigés et commentaires sont enregistrés **sur l'appareil** où ils sont saisis.
 Pour les partager avec tous les postes :
 1. ⚙️ Réglages → **Exporter** : un fichier `equipe.json` est téléchargé.
-2. Remplacez `data/equipe.json` dans le dossier de l'app par ce fichier.
-3. Republiez le dossier (voir plus haut). Tous les appareils récupèrent les notes au prochain chargement avec internet.
+2. Sur GitHub, ouvrez le dossier `data/` du dépôt → *Add file → Upload files* → déposez `equipe.json` → *Commit changes*.
+3. Deux minutes plus tard, tous les appareils récupèrent les notes au prochain chargement avec internet.
 
 Un collègue peut aussi **Importer** un fichier `equipe.json` reçu par e-mail ou sur une clé USB.
 
@@ -69,7 +76,7 @@ Les données viennent d'OpenStreetMap (mise à jour du 13/11/2026). Pour les raf
 node scripts/fetch-osm.mjs
 ```
 
-Puis republiez le dossier. Un lieu faux ou fermé ? Masquez-le dans sa fiche, ou corrigez-le directement
+Puis publiez la modification (voir « L'app en ligne »). Un lieu faux ou fermé ? Masquez-le dans sa fiche, ou corrigez-le directement
 sur OpenStreetMap (lien en bas de chaque fiche) : tout le monde en profite.
 
 ## ⚙️ Réglages
