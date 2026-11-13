@@ -4,6 +4,7 @@ import { hoursStatus, weekTable, parseHours } from './hours.js';
 import { initRouting, travelOptions, walkInfo, gmapsUrl, fmtMin } from './routing.js';
 import { drawBasemap, setLandmarkLang } from './basemap.js';
 import { t, getLang, setLang, applyStatic, fmtMoney, fmtDist, fmtDate } from './i18n.js';
+import { sync } from './sync.js';
 
 const L = window.L;
 const $ = (s, el = document) => el.querySelector(s);
@@ -23,11 +24,16 @@ const store = {
 const STAFF_KEY = 'cb.equipe.v1';
 let staffShared = {};
 let staffLocal = store.get(STAFF_KEY, {});
-const staff = (id) => ({ ...(staffShared[id] || {}), ...(staffLocal[id] || {}) });
+// Avec la synchronisation active, les notes viennent du tableur Google partagé (voir js/sync.js)
+const staff = (id) => (sync.active
+  ? { ...(staffShared[id] || {}), ...sync.get(id) }
+  : { ...(staffShared[id] || {}), ...(staffLocal[id] || {}) });
 function setStaff(id, patch) {
+  if (sync.active) { sync.set(id, patch, byId.get(id)?.n); return; }
   staffLocal[id] = { ...(staffLocal[id] || {}), ...patch };
   store.set(STAFF_KEY, staffLocal);
 }
+const staffIds = () => new Set([...Object.keys(staffShared), ...(sync.active ? sync.ids() : Object.keys(staffLocal))]);
 const priceOf = (v) => staff(v.id).price || v.p;
 const typeKey = (v) => (v.t === 'cocktail' ? 'bar' : v.t);
 const emojiOf = (v) => (v.c && v.c !== 'autre' && CUISINES[v.c] && v.t !== 'cafe' && v.t !== 'bar' ? CUISINES[v.c] : TYPES[v.t].icon);
@@ -120,6 +126,8 @@ async function init() {
   buildFilterUI();
   bindUI();
   applyFilters();
+  sync.onChange(onSyncChange);
+  updateSyncDot();
 
   // Mise à jour des voyants chaque minute
   setInterval(() => { if (state.when === 'now') refreshStatuses(); }, 60_000);
@@ -158,6 +166,69 @@ function switchLang() {
   closeModal();
   refreshStatuses();
   toast(t('toast.lang'));
+}
+
+// ------------------------------------------------------------------ Synchronisation des notes
+function onSyncChange(changed) {
+  updateSyncDot();
+  if ($('#syncBox')) renderSyncBox();
+  if (!changed.size || !venues.length) return;
+  for (const id of changed) { const v = byId.get(id); if (v) v.marker.setIcon(pinIcon(v)); }
+  applyFilters({ keepScroll: true });
+  // on ne redessine pas la fiche pendant qu'on tape une note
+  if (selected && changed.has(selected.id) && document.activeElement?.id !== 'staffNote') renderDetail(selected, { keepRoute: true });
+}
+function updateSyncDot() {
+  const btn = $('#btnSettings');
+  const st = sync.status;
+  btn.dataset.sync = !sync.enabled ? '' : sync.pendingCount && st !== 'syncing' ? 'pending'
+    : st === 'ok' || st === 'syncing' || st === 'idle' ? 'ok' : st === 'needpin' ? 'pin' : 'error';
+}
+function syncStateText() {
+  const st = sync.status;
+  if (st === 'needpin' || st === 'badpin') return t(st === 'badpin' ? 'sy.badpin' : 'sy.needpin');
+  if (st === 'syncing') return t('sy.syncing');
+  if (st === 'offline') return t('sy.offline', { n: sync.pendingCount });
+  if (st === 'error') return t('sy.error', { n: sync.pendingCount });
+  const ago = sync.lastSync ? Math.max(0, Math.round((Date.now() - sync.lastSync) / 60000)) : null;
+  return t('sy.ok', { ago: ago == null ? '—' : ago < 1 ? t('sy.justNow') : t('sy.minAgo', { n: ago }) });
+}
+function renderSyncBox() {
+  const box = $('#syncBox');
+  if (!box) return;
+  if (sync.active) {
+    box.innerHTML = `
+      <p class="sync-state s-${sync.status}">${syncStateText()}</p>
+      <label class="field">${t('sy.name')} <input id="syName" value="${esc(sync.name)}" placeholder="${t('sy.namePh')}"></label>
+      <div class="row">
+        <button class="btn" id="syNow">${t('sy.now')}</button>
+        <button class="btn btn--ghost" id="syOff">${t('sy.disconnect')}</button>
+      </div>`;
+    $('#syNow').onclick = () => sync.now();
+    $('#syOff').onclick = () => { sync.disconnect(); venues.forEach((v) => v.marker.setIcon(pinIcon(v))); applyFilters(); renderSyncBox(); };
+    $('#syName').onchange = (e) => sync.setName(e.target.value);
+  } else {
+    box.innerHTML = `
+      <p>${sync.enabled ? t('sy.intro') : t('sy.introNoUrl')}</p>
+      ${sync.status === 'badpin' ? `<p class="sync-state s-error">${t('sy.badpin')}</p>` : ''}
+      ${sync.fromConfig ? '' : `<label class="field">${t('sy.url')} <input id="syUrl" value="${esc(sync.url)}" placeholder="https://script.google.com/macros/s/…/exec"></label>`}
+      <label class="field">${t('sy.code')} <input id="syCode" type="password" autocomplete="off"></label>
+      <label class="field">${t('sy.name')} <input id="syName" value="${esc(sync.name)}" placeholder="${t('sy.namePh')}"></label>
+      <div class="row"><button class="btn btn--pop" id="syGo">${t('sy.connect')}</button></div>`;
+    $('#syGo').onclick = async () => {
+      const b = $('#syGo'); b.disabled = true; b.textContent = t('sy.syncing');
+      const res = await sync.connect({ code: $('#syCode').value, who: $('#syName').value, address: $('#syUrl')?.value, legacy: staffLocal });
+      if (res === 'ok') {
+        const n = Object.keys(staffLocal).length;
+        staffLocal = {}; store.set(STAFF_KEY, staffLocal); // désormais dans le tableur partagé
+        venues.forEach((v) => v.marker.setIcon(pinIcon(v)));
+        applyFilters();
+        toast(n ? t('sy.connectedUp', { n }) : t('sy.connected'));
+      } else if (res === 'nourl') toast(t('sy.needUrl'));
+      else if (res !== 'badpin') toast(t('sy.fail'));
+      renderSyncBox();
+    };
+  }
 }
 
 // ------------------------------------------------------------------ Statuts
@@ -596,6 +667,7 @@ function renderDetail(v, { keepRoute = false } = {}) {
         </label>
         <textarea id="staffNote" placeholder="${esc(t('d.staffPh'))}">${esc(s.note || '')}</textarea>
         <label><input type="checkbox" id="staffHidden" ${s.hidden ? 'checked' : ''}> ${t('d.staffHide')}</label>
+        ${sync.active ? `<p class="raw">${s.at ? t('sy.lastEdit', { by: esc(s.by || '?'), d: new Date(s.at).toLocaleString(getLang() === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }) : ''} ${t('sy.shared')}</p>` : ''}
       </div>
       <p class="src">${t('d.src', { u: osmUrl })}</p>
     </div>`;
@@ -777,7 +849,7 @@ function surprise() {
 
 // ------------------------------------------------------------------ Réglages & partage
 function openSettings() {
-  const nbStaff = Object.keys({ ...staffShared, ...staffLocal }).length;
+  const nbStaff = [...staffIds()].filter((id) => Object.keys(staff(id)).some((k) => ['fav', 'stars', 'price', 'note', 'hidden'].includes(k) && staff(id)[k])).length;
   const nbHidden = venues.filter((v) => staff(v.id).hidden).length;
   const credits = Object.entries(photos).map(([k, p]) => `<li>${esc(CUISINES[k] ? t('cui.' + k) : t('types.' + k))} : <a href="${esc(p.page)}" target="_blank" rel="noopener">${esc(p.author)}</a> (${esc(p.license)})</li>`).join('');
   openModal(`
@@ -789,13 +861,17 @@ function openSettings() {
         <ul>${t('s.helpList').map((x) => `<li>${x}</li>`).join('')}</ul>
       </section>
       <section>
+        <h3>${t('sy.title')}</h3>
+        <div id="syncBox"></div>
+      </section>
+      <section>
         <h3>${t('s.staff')}</h3>
-        <p>${t('s.staffText', { n: nbStaff, h: nbHidden ? t('s.hidden', { n: nbHidden }) : '' })}</p>
+        <p>${t(sync.active ? 's.staffTextSync' : 's.staffText', { n: nbStaff, h: nbHidden ? t('s.hidden', { n: nbHidden }) : '' })}</p>
         <div class="row">
           <button class="btn" id="expBtn">${t('s.export')}</button>
           <label class="btn">${t('s.import')}<input type="file" id="impFile" accept=".json,application/json" hidden></label>
           ${nbHidden ? `<button class="btn" id="unhideBtn">${t('s.unhide')}</button>` : ''}
-          <button class="btn btn--red" id="wipeBtn">${t('s.wipe')}</button>
+          ${sync.active ? '' : `<button class="btn btn--red" id="wipeBtn">${t('s.wipe')}</button>`}
         </div>
       </section>
       <section>
@@ -810,10 +886,11 @@ function openSettings() {
         <details><summary>${t('s.credits')}</summary><ul class="credits">${credits}</ul></details>
       </section>
     </div>`);
+  renderSyncBox();
   $('#guideBtn').onclick = openInstallGuide;
   $('#expBtn').onclick = exportStaff;
   $('#impFile').onchange = importStaff;
-  $('#wipeBtn').onclick = () => {
+  if ($('#wipeBtn')) $('#wipeBtn').onclick = () => {
     if (!confirm(t('s.wipeConfirm'))) return;
     staffLocal = {}; store.set(STAFF_KEY, staffLocal);
     venues.forEach((v) => v.marker.setIcon(pinIcon(v)));
@@ -828,8 +905,7 @@ function openSettings() {
 
 function exportStaff() {
   const merged = {};
-  for (const [id, s] of Object.entries({ ...staffShared })) merged[id] = { ...s };
-  for (const [id, s] of Object.entries(staffLocal)) merged[id] = { ...(merged[id] || {}), ...s };
+  for (const id of staffIds()) { const { at, by, ...s } = staff(id); merged[id] = s; }
   for (const [id, s] of Object.entries(merged)) {
     for (const k of Object.keys(s)) if (!s[k] && k !== 'nom') delete s[k];
     if (Object.keys(s).filter((k) => k !== 'nom').length === 0) { delete merged[id]; continue; }
@@ -850,7 +926,13 @@ async function importStaff(e) {
     const j = JSON.parse(await f.text());
     const lieux = j.lieux || j;
     let n = 0;
-    for (const [id, s] of Object.entries(lieux)) if (byId.has(id)) { const { nom, ...rest } = s; staffLocal[id] = { ...(staffLocal[id] || {}), ...rest }; n++; }
+    for (const [id, s] of Object.entries(lieux)) {
+      if (!byId.has(id)) continue;
+      const { nom, at, by, ...rest } = s;
+      if (sync.active) sync.set(id, rest, byId.get(id).n);
+      else staffLocal[id] = { ...(staffLocal[id] || {}), ...rest };
+      n++;
+    }
     store.set(STAFF_KEY, staffLocal);
     venues.forEach((v) => v.marker.setIcon(pinIcon(v)));
     applyFilters(); closeModal(); toast(t('s.imported', { n }));

@@ -1,7 +1,7 @@
 // Service worker : met toute l'application en cache pour un usage hors ligne.
 // Les fichiers de l'app sont pris sur le réseau quand il est là, sinon dans le cache.
 // Incrémentez VERSION si vous ajoutez de nouveaux fichiers à la liste ASSETS.
-const VERSION = 'v4-2026-11-13';
+const VERSION = 'v5-2026-11-13';
 const CORE = `cb-core-${VERSION}`;
 const IMG = 'cb-img';
 
@@ -10,7 +10,7 @@ const PHOTOS = ['africaine', 'asiatique', 'autre', 'bar', 'burger', 'cafe', 'clu
 
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/config.js', 'js/hours.js', 'js/routing.js', 'js/basemap.js', 'js/graph.js', 'js/i18n.js',
+  'js/app.js', 'js/config.js', 'js/hours.js', 'js/routing.js', 'js/basemap.js', 'js/graph.js', 'js/i18n.js', 'js/sync.js',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet.markercluster.js', 'vendor/qrcode.js',
   'fonts/bangers-latin.woff2', 'fonts/bangers-latin-ext.woff2', 'fonts/comicneue-400.woff2', 'fonts/comicneue-700.woff2',
   'data/venues.json', 'data/basemap.json', 'data/tram.json', 'data/photos.json', 'data/equipe.json', 'data/graph.json', 'data/parkings.json',

@@ -477,6 +477,21 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
 .settings .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .credits { font-size: .78rem; max-height: 140px; overflow-y: auto; background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; }
 
+/* ---------- Synchronisation ---------- */
+#btnSettings { position: relative; }
+#btnSettings[data-sync]:not([data-sync=""])::after {
+  content: ''; position: absolute; right: -2px; top: -2px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink); background: var(--green);
+}
+#btnSettings[data-sync="pending"]::after { background: var(--orange); animation: blink 1.1s steps(2) infinite; }
+#btnSettings[data-sync="error"]::after { background: #e53935; }
+#btnSettings[data-sync="pin"]::after { background: #cfcfcf; }
+.sync-state { font-weight: 700; background: #fff; border: 2px solid var(--ink); border-radius: 12px; padding: 6px 10px; }
+.sync-state.s-ok { background: #d9f7dc; }
+.sync-state.s-offline, .sync-state.s-syncing { background: #fff3d6; }
+.sync-state.s-error, .sync-state.s-badpin { background: #ffd9d6; }
+.field { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 700; font-size: .9rem; flex-wrap: wrap; }
+.field input { flex: 1; min-width: 160px; border: 2px solid var(--ink); border-radius: 10px; padding: .35em .6em; background: #fff; font: inherit; font-weight: 400; }
+
 /* ---------- Guide d'installation ---------- */
 .btn--ready { animation: readyPulse 1.6s ease-in-out infinite; }
 @keyframes readyPulse { 0%,100% { box-shadow: 2px 2px 0 var(--ink); } 50% { box-shadow: 2px 2px 0 var(--ink), 0 0 0 6px rgba(255,90,54,.35); } }

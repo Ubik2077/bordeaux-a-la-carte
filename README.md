@@ -10,7 +10,7 @@ Carte interactive style BD des **bars et restaurants de Bordeaux**, pensée pour
 - **Version anglaise** : bouton 🌐 EN / FR, toute l'app est traduite (fiches, horaires, trajets, QR code, monuments)
 - **QR code** : le client scanne et repart avec l'itinéraire Google Maps sur son téléphone
 - **🎲 Surprends-moi !** : tirage au sort parmi les résultats
-- **Notes de l'équipe** : étoiles, coups de cœur ❤️, prix corrigé, commentaire, masquer un lieu
+- **Notes de l'équipe** : étoiles, coups de cœur ❤️, prix corrigé, commentaire, masquer un lieu, **synchronisées en direct** entre tous les postes (Google Sheets)
 - **PWA** : s'installe sur ordinateur, Android et iPhone, et **fonctionne hors ligne** (le plan est dessiné par l'app, aucune tuile à télécharger)
 
 ## 🕹️ Utilisation
@@ -59,15 +59,40 @@ Ouvrez l'adresse une première fois avec internet, puis :
 
 Ensuite l'app s'ouvre comme une application et fonctionne **sans connexion**.
 
-## ❤️ Partager les notes de l'équipe
+## 🔄 Notes synchronisées (Google Sheets)
 
-Les étoiles, coups de cœur, prix corrigés et commentaires sont enregistrés **sur l'appareil** où ils sont saisis.
-Pour les partager avec tous les postes :
-1. ⚙️ Réglages → **Exporter** : un fichier `equipe.json` est téléchargé.
-2. Sur GitHub, ouvrez le dossier `data/` du dépôt → *Add file → Upload files* → déposez `equipe.json` → *Commit changes*.
-3. Deux minutes plus tard, tous les appareils récupèrent les notes au prochain chargement avec internet.
+Les étoiles, coups de cœur, prix corrigés et commentaires peuvent être **partagés en direct** entre tous les
+postes et téléphones. Ils sont stockés dans un Google Sheets de l'hôtel, que vous pouvez aussi consulter,
+trier ou corriger à la main. Un **code d'équipe** protège l'accès, et hors ligne les modifications attendent
+puis partent au retour du réseau.
 
-Un collègue peut aussi **Importer** un fichier `equipe.json` reçu par e-mail ou sur une clé USB.
+### Mise en place (une seule fois, environ 5 minutes)
+1. Avec le compte Google de l'hôtel, créez un **Google Sheets** vide, par exemple « Bordeaux à la carte – notes ».
+2. Menu **Extensions → Apps Script**. Effacez le contenu et collez tout le fichier
+   [scripts/google-apps-script/Code.gs](scripts/google-apps-script/Code.gs).
+3. Ligne `const CODE_EQUIPE = 'CHANGEZ-MOI';` : remplacez `CHANGEZ-MOI` par votre code (ex. `ibis2026`), puis 💾 Enregistrer.
+4. Bouton **Déployer → Nouveau déploiement**. Cliquez l'engrenage ⚙️ → **Application Web**, puis réglez :
+   - *Exécuter en tant que* : **Moi**
+   - *Qui a accès* : **Tout le monde**
+5. **Déployer**. Google demande d'autoriser l'accès : choisissez votre compte. Si l'écran « Google n'a pas validé
+   cette application » apparaît, cliquez *Paramètres avancés → Accéder au projet*. C'est normal : c'est votre propre script.
+6. Copiez l'**URL de l'application Web** (elle se termine par `/exec`).
+
+### Sur chaque appareil
+⚙️ Réglages → **🔄 Notes synchronisées** : collez l'adresse, tapez le code d'équipe et votre prénom, puis **Connecter**.
+Les notes déjà saisies sur l'appareil sont envoyées automatiquement.
+
+> 💡 Pour ne plus avoir à coller l'adresse sur chaque appareil, renseignez-la dans `SYNC_URL`
+> ([js/config.js](js/config.js)) et republiez : il ne restera que le code d'équipe à taper.
+
+Le voyant sur ⚙️ indique l'état : 🟢 synchronisé, 🟠 modifications en attente, 🔴 service injoignable.
+Chaque fiche affiche qui a fait la dernière modification, et quand.
+
+**Changer le code d'équipe** : modifiez-le dans le script, puis *Déployer → Gérer les déploiements → ✏️ →
+Version : Nouvelle version → Déployer*. L'adresse ne change pas, et chacun retape le nouveau code.
+
+**Sans synchronisation** : ⚙️ Réglages → **Exporter** télécharge `equipe.json`. Déposé dans le dossier `data/`
+du dépôt GitHub (*Add file → Upload files*), il sert de notes de base à tous les appareils. Il sert aussi de sauvegarde.
 
 ## 🔄 Mettre à jour les lieux
 
@@ -119,6 +144,8 @@ js/hours.js                                lecture des horaires OSM, statut ouve
 js/routing.js                              trajets (marche, tram, vélo, taxi, voiture + parking)
 js/graph.js                                moteur d'itinéraires hors ligne sur le réseau de rues
 js/i18n.js                                 traductions français / anglais
+js/sync.js                                 synchronisation des notes avec Google Sheets
+scripts/google-apps-script/Code.gs         script à coller dans Google Sheets (notes partagées)
 js/config.js                               réglages
 data/                                      lieux, plan, tram, réseau routier, parkings, crédits photos, notes d'équipe
 scripts/fetch-osm.mjs                      mise à jour des données OpenStreetMap

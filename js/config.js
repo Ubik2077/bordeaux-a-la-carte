@@ -8,6 +8,10 @@ export const HOTEL = {
   lo: -0.55693,
 };
 
+// Adresse du service de synchronisation des notes (Google Apps Script, voir README).
+// Laisser vide pour la saisir dans ⚙️ Réglages sur chaque appareil.
+export const SYNC_URL = '';
+
 // Minutes avant la fermeture où le voyant passe à l'orange
 export const CLOSING_SOON_MIN = 60;
 
