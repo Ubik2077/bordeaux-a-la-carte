@@ -80,6 +80,14 @@ function schedule(ms = 1200) {
   timer = setTimeout(syncNow, ms);
 }
 
+// Coups de cœur publics pour la version clients (sans code d'équipe, sans les commentaires)
+export async function fetchPublicNotes() {
+  if (!SYNC_URL) return null;
+  const r = await fetch(SYNC_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'public' }), redirect: 'follow' });
+  const j = await r.json();
+  return j.ok ? j.lieux || {} : null;
+}
+
 export const sync = {
   get enabled() { return !!url; },
   get active() { return !!url && !!pin; },

@@ -28,8 +28,18 @@ function doGet() {
 function doPost(e) {
   let p = {};
   try { p = JSON.parse(e.postData.contents); } catch (err) { return out({ ok: false, error: 'json' }); }
-  if (CODE_EQUIPE === 'CHANGEZ-MOI' || String(p.pin || '') !== CODE_EQUIPE) return out({ ok: false, error: 'pin' });
+  if (CODE_EQUIPE === 'CHANGEZ-MOI') return out({ ok: false, error: 'pin' });
   const sh = feuille();
+  // Version clients : coups de cœur, étoiles, prix et lieux masqués uniquement (jamais les commentaires)
+  if (p.action === 'public') {
+    const all = lire(sh), pub = {};
+    for (const id in all) {
+      const r = all[id];
+      if (r.fav || r.stars || r.price || r.hidden) pub[id] = { fav: r.fav, stars: r.stars, price: r.price, hidden: r.hidden };
+    }
+    return out({ ok: true, lieux: pub });
+  }
+  if (String(p.pin || '') !== CODE_EQUIPE) return out({ ok: false, error: 'pin' });
   if (p.action === 'bulk') {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);

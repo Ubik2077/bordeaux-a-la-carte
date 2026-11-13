@@ -477,6 +477,44 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
 .settings .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .credits { font-size: .78rem; max-height: 140px; overflow-y: auto; background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; }
 
+/* ---------- Version clients ---------- */
+.pick { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; background: #ffe1ea; border: 2px solid var(--ink); border-radius: 999px; padding: .3em .9em; font-weight: 700; box-shadow: var(--shadow-sm); }
+#btnLocate.on { background: var(--blue); }
+.me-pin { background: none; border: 0; }
+.me-pin i { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--blue); border: 3px solid #fff; box-shadow: 0 0 0 2px var(--ink), 0 0 0 0 rgba(58,168,255,.6); animation: mePulse 2s infinite; }
+@keyframes mePulse { 70% { box-shadow: 0 0 0 2px var(--ink), 0 0 0 16px rgba(58,168,255,0); } 100% { box-shadow: 0 0 0 2px var(--ink), 0 0 0 0 rgba(58,168,255,0); } }
+
+/* Affiche QR (A5) */
+.modal--poster .modal__box { width: min(460px, 100%); }
+.poster {
+  position: relative; text-align: center; background: var(--yellow); border: 4px solid var(--ink); border-radius: 22px; padding: 22px 18px 16px;
+  background-image: radial-gradient(rgba(0,0,0,.09) 1.2px, transparent 1.6px); background-size: 9px 9px; overflow: hidden;
+}
+.poster__logo {
+  width: 74px; height: 74px; margin: 0 auto 4px; display: grid; place-items: center; font-size: 36px; background: var(--red);
+  clip-path: polygon(50% 0, 61% 16%, 79% 7%, 80% 26%, 98% 28%, 88% 45%, 100% 59%, 82% 66%, 86% 85%, 67% 82%, 58% 100%, 46% 86%, 30% 97%, 26% 79%, 7% 79%, 14% 62%, 0 49%, 15% 38%, 7% 20%, 26% 20%, 31% 2%, 44% 14%);
+}
+.poster__title { margin: 0; font-family: var(--font-title); font-weight: 400; font-size: 2.3rem; line-height: .95; letter-spacing: .03em; text-shadow: 3px 3px 0 #fff; transform: rotate(-2deg); }
+.poster__en { margin: 6px 0 10px; font-weight: 700; font-style: italic; }
+.poster__qr { width: 62%; margin: 0 auto; background: #fff; border: 4px solid var(--ink); border-radius: 16px; padding: 8px; box-shadow: 5px 5px 0 var(--ink); }
+.poster__qr svg { display: block; width: 100%; height: auto; }
+.poster__scan { margin: 12px 0 8px; font-family: var(--font-title); font-size: 1.25rem; letter-spacing: .04em; line-height: 1.15; }
+.poster__scan i { font-family: var(--font-body); font-size: .85rem; font-weight: 700; letter-spacing: 0; }
+.poster__feat { list-style: none; margin: 0 auto 10px; padding: 8px 12px; text-align: left; display: inline-flex; flex-direction: column; gap: 3px; background: #fff; border: 2px solid var(--ink); border-radius: 12px; font-size: .88rem; font-weight: 700; }
+.poster__foot { margin: 4px 0 0; font-size: .78rem; font-weight: 700; }
+.poster__btns { justify-content: center; margin-top: 12px; }
+
+@media print {
+  @page { size: A5 portrait; margin: 6mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { overflow: visible !important; background: #fff !important; height: auto; }
+  body * { visibility: hidden !important; }
+  .poster, .poster * { visibility: visible !important; }
+  .poster { position: fixed; left: 0; top: 0; width: 100%; }
+  .modal__backdrop, .no-print { display: none !important; }
+  .modal__box { animation: none !important; box-shadow: none !important; border: 0 !important; background: none !important; }
+}
+
 /* ---------- Synchronisation ---------- */
 #btnSettings { position: relative; }
 #btnSettings[data-sync]:not([data-sync=""])::after {

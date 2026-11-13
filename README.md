@@ -59,6 +59,22 @@ Ouvrez l'adresse une première fois avec internet, puis :
 
 Ensuite l'app s'ouvre comme une application et fonctionne **sans connexion**.
 
+## 📱 Version clients (QR code)
+
+Une version **pour les clients**, sans les outils de la réception, à leur partager par QR code :
+👉 **<https://ubik2077.github.io/bordeaux-a-la-carte/?client>**
+
+- Elle contient la carte, les filtres, les horaires, les trajets depuis l'hôtel, le français et l'anglais, l'installation et le hors ligne,
+  plus un bouton **📍 Me localiser** et un bouton **📤 Partager** pour envoyer une adresse.
+- Les clients voient vos **❤️ coups de cœur** et vos **étoiles** (« Recommandé par la réception »), jamais vos commentaires internes,
+  et les lieux que vous avez masqués n'apparaissent pas.
+- **Affiche à imprimer** : ⚙️ Réglages → **📱 Version clients → 🖨️ Affiche QR pour les clients** (format A5, bilingue).
+- Le téléphone du client mémorise le mode client, même une fois l'app installée. Sur un poste de la réception,
+  utilisez le bouton « 👀 Aperçu », qui ne change pas de mode. Pour revenir à la version réception : ajoutez `?reception` à l'adresse.
+
+> Pour que les clients voient vos coups de cœur, ceux-ci doivent être publiés : soit via la synchronisation Google
+> (avec `SYNC_URL` renseignée dans [js/config.js](js/config.js)), soit via un fichier `data/equipe.json` exporté puis déposé sur GitHub.
+
 ## 🔄 Notes synchronisées (Google Sheets)
 
 Les étoiles, coups de cœur, prix corrigés et commentaires peuvent être **partagés en direct** entre tous les

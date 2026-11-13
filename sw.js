@@ -1,7 +1,7 @@
 // Service worker : met toute l'application en cache pour un usage hors ligne.
 // Les fichiers de l'app sont pris sur le réseau quand il est là, sinon dans le cache.
 // Incrémentez VERSION si vous ajoutez de nouveaux fichiers à la liste ASSETS.
-const VERSION = 'v5-2026-11-13';
+const VERSION = 'v6-2026-11-13';
 const CORE = `cb-core-${VERSION}`;
 const IMG = 'cb-img';
 

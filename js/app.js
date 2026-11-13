@@ -4,7 +4,7 @@ import { hoursStatus, weekTable, parseHours } from './hours.js';
 import { initRouting, travelOptions, walkInfo, gmapsUrl, fmtMin } from './routing.js';
 import { drawBasemap, setLandmarkLang } from './basemap.js';
 import { t, getLang, setLang, applyStatic, fmtMoney, fmtDist, fmtDate } from './i18n.js';
-import { sync } from './sync.js';
+import { sync, fetchPublicNotes } from './sync.js';
 
 const L = window.L;
 const $ = (s, el = document) => el.querySelector(s);
@@ -20,14 +20,29 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } },
 };
 
+// Version clients : lien « ?client » (mémorisé sur l'appareil, y compris une fois l'app installée).
+// « ?client&apercu » pour un simple aperçu sans changer de mode, « ?reception » pour revenir.
+const MODE_KEY = 'cb.mode';
+const params = new URLSearchParams(location.search);
+if (params.has('reception')) store.set(MODE_KEY, 'staff');
+else if (params.has('client') && !params.has('apercu')) store.set(MODE_KEY, 'client');
+const CLIENT = params.has('client') || (!params.has('reception') && store.get(MODE_KEY, 'staff') === 'client');
+document.documentElement.classList.toggle('mode-client', CLIENT);
+
 // Notes de l'équipe : fichier partagé data/equipe.json + modifications locales
 const STAFF_KEY = 'cb.equipe.v1';
 let staffShared = {};
 let staffLocal = store.get(STAFF_KEY, {});
 // Avec la synchronisation active, les notes viennent du tableur Google partagé (voir js/sync.js)
-const staff = (id) => (sync.active
-  ? { ...(staffShared[id] || {}), ...sync.get(id) }
-  : { ...(staffShared[id] || {}), ...(staffLocal[id] || {}) });
+// Les clients ne voient que les coups de cœur, étoiles, prix et lieux masqués (jamais les commentaires)
+const PUBLIC_FIELDS = ['fav', 'stars', 'price', 'hidden'];
+const pickPublic = (o) => Object.fromEntries(PUBLIC_FIELDS.filter((k) => o && k in o).map((k) => [k, o[k]]));
+let publicNotes = CLIENT ? store.get('cb.public.cache', {}) : {};
+const staff = (id) => (CLIENT
+  ? { ...pickPublic(staffShared[id]), ...pickPublic(publicNotes[id]) }
+  : sync.active
+    ? { ...(staffShared[id] || {}), ...sync.get(id) }
+    : { ...(staffShared[id] || {}), ...(staffLocal[id] || {}) });
 function setStaff(id, patch) {
   if (sync.active) { sync.set(id, patch, byId.get(id)?.n); return; }
   staffLocal[id] = { ...(staffLocal[id] || {}), ...patch };
@@ -63,6 +78,13 @@ let selected = null;
 let listLimit = 60;
 
 // ------------------------------------------------------------------ Démarrage
+if (CLIENT) {
+  $('.brand__sub [data-i18n]').dataset.i18n = 'brand.client';
+  $('#toggleChips [data-t=fav]').dataset.i18n = 'tg.favClient';
+  $('#btnSettings').dataset.i18nTitle = 'help.title';
+  $('#btnSettings').textContent = 'ℹ️';
+  $('#btnLocate').hidden = false;
+}
 applyStatic();
 init().catch((e) => {
   console.error(e);
@@ -126,8 +148,20 @@ async function init() {
   buildFilterUI();
   bindUI();
   applyFilters();
-  sync.onChange(onSyncChange);
-  updateSyncDot();
+  if (CLIENT) {
+    // coups de cœur publiés par la réception (tableur Google si configuré)
+    fetchPublicNotes().then((lieux) => {
+      if (!lieux) return;
+      publicNotes = lieux;
+      store.set('cb.public.cache', lieux);
+      venues.forEach((v) => v.marker.setIcon(pinIcon(v)));
+      applyFilters({ keepScroll: true });
+    }).catch(() => { /* hors ligne : on garde le cache */ });
+  } else {
+    sync.onChange(onSyncChange);
+    updateSyncDot();
+    if (params.has('affiche')) openPoster();
+  }
 
   // Mise à jour des voyants chaque minute
   setInterval(() => { if (state.when === 'now') refreshStatuses(); }, 60_000);
@@ -137,7 +171,7 @@ async function init() {
   setTimeout(() => toast(t('toast.loaded', { n: venues.length, d: fmtDate(dataDate) })), 600);
 }
 
-const hotelIcon = () => L.divIcon({ className: 'hotel-pin', iconSize: [0, 0], html: `<div class="h">🏨</div><div class="bubble">${t('hotel.bubble')}</div>` });
+const hotelIcon = () => L.divIcon({ className: 'hotel-pin', iconSize: [0, 0], html: `<div class="h">🏨</div><div class="bubble">${t(CLIENT ? 'hotel.bubbleClient' : 'hotel.bubble')}</div>` });
 
 // Recherche : on indexe les libellés dans les deux langues
 function buildSearchIndex() {
@@ -526,7 +560,8 @@ function bindUI() {
   $('#sheetHandle').addEventListener('click', () => $('#panel').classList.toggle('expanded'));
   $('#btnHotel').addEventListener('click', () => map.flyTo([HOTEL.la, HOTEL.lo], 16, { duration: 0.8 }));
   $('#btnRandom').addEventListener('click', surprise);
-  $('#btnSettings').addEventListener('click', openSettings);
+  $('#btnSettings').addEventListener('click', CLIENT ? openClientHelp : openSettings);
+  $('#btnLocate').addEventListener('click', toggleLocate);
   map.on('movestart zoomstart', () => { $('#hoverCard').hidden = true; });
   map.on('click', () => { if (isMobile()) $('#panel').classList.remove('expanded'); });
 
@@ -617,11 +652,11 @@ function renderDetail(v, { keepRoute = false } = {}) {
         ${priceHtml(p)} <span><b>${t('price.' + p)}</b> · ${t('priceHint.' + p)}${s.price ? t('d.priceStaff') : t('d.priceEst')}</span>
       </div>
       <div class="status-pill s-${v.status.state}"><i class="light light--${v.status.state}"></i>${esc(v.status.text)}${v.status.approx ? ` <small>${t('d.approx')}</small>` : ''}</div>
-      <div class="rate-row">
+      ${CLIENT ? (s.fav || s.stars ? `<div class="pick">❤️ ${t('d.pick')} ${s.stars ? starsHtml(s.stars) : ''}</div>` : '') : `<div class="rate-row">
         <span class="star-input" id="starInput" title="${t('d.rateTitle')}">${[1, 2, 3, 4, 5].map((i) => `<button data-s="${i}" class="${i <= (s.stars || 0) ? 'on' : ''}" aria-label="${t('d.star', { n: i })}">★</button>`).join('')}</span>
         <button class="btn btn--small fav-btn${s.fav ? ' on' : ''}" id="favBtn"><span>❤</span> ${s.fav ? t('d.favOn') : t('d.favOff')}</button>
-      </div>
-      ${s.note ? `<div class="tip" style="background:#fff3b0">${esc(s.note)}</div>` : ''}
+      </div>`}
+      ${!CLIENT && s.note ? `<div class="tip" style="background:#fff3b0">${esc(s.note)}</div>` : ''}
 
       <h3>${t('d.go')}</h3>
       <div class="tip">${t('tip.' + tr.tip)}</div>
@@ -639,8 +674,11 @@ function renderDetail(v, { keepRoute = false } = {}) {
       </div>
       <p class="estim">${t('d.estim')}</p>
       <div class="actions">
-        <button class="btn btn--pop" id="qrBtn">${t('d.qr')}</button>
-        <a class="btn" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def))}" target="_blank" rel="noopener">${t('d.gmaps')}</a>
+        ${CLIENT
+    ? `<a class="btn btn--pop" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def))}" target="_blank" rel="noopener">${t('d.gmapsGo')}</a>
+           <button class="btn" id="shareBtn">${t('d.share')}</button>`
+    : `<button class="btn btn--pop" id="qrBtn">${t('d.qr')}</button>
+           <a class="btn" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def))}" target="_blank" rel="noopener">${t('d.gmaps')}</a>`}
       </div>
 
       <h3>${t('d.hours')}</h3>
@@ -660,7 +698,7 @@ function renderDetail(v, { keepRoute = false } = {}) {
         ${v.ts ? `<span class="tag">${t('tag.ts')}</span>` : ''}${v.vg ? `<span class="tag">${t('tag.vg')}</span>` : ''}${v.wc ? `<span class="tag">${t('tag.wc')}</span>` : ''}${v.ta ? `<span class="tag">${t('tag.ta')}</span>` : ''}
       </div>
 
-      <h3>${t('d.staff')}</h3>
+      ${CLIENT ? '' : `<h3>${t('d.staff')}</h3>
       <div class="staff">
         <label>${t('d.staffPrice')}
           <span class="seg" id="staffPrice">${[1, 2, 3].map((i) => `<button data-p="${i}" class="${s.price === i ? 'on' : ''}">${'€'.repeat(i)}</button>`).join('')}</span>
@@ -668,7 +706,7 @@ function renderDetail(v, { keepRoute = false } = {}) {
         <textarea id="staffNote" placeholder="${esc(t('d.staffPh'))}">${esc(s.note || '')}</textarea>
         <label><input type="checkbox" id="staffHidden" ${s.hidden ? 'checked' : ''}> ${t('d.staffHide')}</label>
         ${sync.active ? `<p class="raw">${s.at ? t('sy.lastEdit', { by: esc(s.by || '?'), d: new Date(s.at).toLocaleString(getLang() === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }) : ''} ${t('sy.shared')}</p>` : ''}
-      </div>
+      </div>`}
       <p class="src">${t('d.src', { u: osmUrl })}</p>
     </div>`;
 
@@ -680,6 +718,11 @@ function renderDetail(v, { keepRoute = false } = {}) {
     $('#gmapsBtn').href = gmapsUrl(v, o);
     drawRoute(v, o, true);
   };
+  if (CLIENT) {
+    $('#shareBtn').onclick = () => shareVenue(v, tr.opts.find((o) => o.mode === ($('#detail .tcard.on')?.dataset.mode || def)));
+    if (!keepRoute) drawRoute(v, tr.opts.find((o) => o.mode === def), true);
+    return;
+  }
   $('#qrBtn').onclick = () => openQR(v, tr, $('#detail .tcard.on')?.dataset.mode || def);
   $('#starInput').onclick = (e) => {
     const b = e.target.closest('button'); if (!b) return;
@@ -875,6 +918,14 @@ function openSettings() {
         </div>
       </section>
       <section>
+        <h3>${t('s.client')}</h3>
+        <p>${t('s.clientText')}</p>
+        <div class="row">
+          <button class="btn btn--pop" id="posterBtn">${t('s.poster')}</button>
+          <a class="btn" href="${clientUrl(true)}" target="_blank" rel="noopener">${t('s.preview')}</a>
+        </div>
+      </section>
+      <section>
         <h3>${t('s.install')}</h3>
         <p>${navigator.serviceWorker?.controller ? t('s.offlineOk') : t('s.offlineWait')}</p>
         <p>${isStandalone() ? t('s.isInstalled') : t('s.notInstalled')}</p>
@@ -887,6 +938,7 @@ function openSettings() {
       </section>
     </div>`);
   renderSyncBox();
+  $('#posterBtn').onclick = openPoster;
   $('#guideBtn').onclick = openInstallGuide;
   $('#expBtn').onclick = exportStaff;
   $('#impFile').onchange = importStaff;
@@ -939,12 +991,103 @@ async function importStaff(e) {
   } catch { toast(t('s.badFile')); }
 }
 
+// ------------------------------------------------------------------ Version clients
+function clientUrl(preview = false) {
+  return location.origin + location.pathname.replace(/index\.html$/, '') + (preview ? '?client&apercu' : '?client');
+}
+
+// Affiche à imprimer (A5) avec le QR code de la version clients — bilingue
+function openPoster() {
+  const qr = window.qrcode(0, 'M');
+  qr.addData(clientUrl()); qr.make();
+  const n = Math.floor((venues.length || 1700) / 100) * 100;
+  openModal(`
+    <button class="btn btn--round x no-print" data-close>✕</button>
+    <div class="poster" id="poster">
+      <div class="poster__logo">🍽️</div>
+      <h2 class="poster__title">Où manger & boire<br>à Bordeaux ?</h2>
+      <p class="poster__en">Where to eat & drink in Bordeaux?</p>
+      <div class="poster__qr">${qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true })}</div>
+      <p class="poster__scan">📱 Scannez avec l’appareil photo<br><i>Scan with your phone camera</i></p>
+      <ul class="poster__feat">
+        <li>🗺️ ${n}+ restaurants & bars</li>
+        <li>🟢 Ouvert maintenant · <i>Open now</i></li>
+        <li>🚶🚋🚗 Trajets depuis l’hôtel · <i>Directions from the hotel</i></li>
+        <li>❤️ Nos coups de cœur · <i>Our favourites</i></li>
+        <li>🇫🇷 🇬🇧 · 📴 hors ligne · <i>works offline</i></li>
+      </ul>
+      <p class="poster__foot">🏨 ${esc(HOTEL.name)}</p>
+    </div>
+    <div class="row no-print poster__btns">
+      <button class="btn btn--pop" id="printBtn">${t('poster.print')}</button>
+      <a class="btn" href="${clientUrl(true)}" target="_blank" rel="noopener">${t('s.preview')}</a>
+    </div>
+    <p class="raw center no-print">${esc(clientUrl())}</p>`);
+  $('#modal').classList.add('modal--poster');
+  $('#printBtn').onclick = () => window.print();
+}
+
+function openClientHelp() {
+  openModal(`
+    <button class="btn btn--round x" data-close>✕</button>
+    <h2>${t('c.title')}</h2>
+    <div class="settings">
+      <section><ul>${t('c.helpList').map((x) => `<li>${x}</li>`).join('')}</ul></section>
+      <section>
+        <h3>${t('s.install')}</h3>
+        <p>${t('c.offline')}</p>
+        <div class="row"><button class="btn btn--pop" id="guideBtn">${t('s.howInstall')}</button></div>
+      </section>
+      <section>
+        <h3>${t('s.data')}</h3>
+        <p>${t('c.dataText', { n: venues.length, d: fmtDate(dataDate) })}</p>
+      </section>
+    </div>`);
+  $('#guideBtn').onclick = openInstallGuide;
+}
+
+// Partager un lieu (feuille de partage du téléphone, sinon copie du lien)
+async function shareVenue(v, o) {
+  const url = gmapsUrl(v, o);
+  const text = `${v.n}${v.a ? ' – ' + v.a + ', Bordeaux' : ''}`;
+  try {
+    if (navigator.share) { await navigator.share({ title: v.n, text, url }); return; }
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    toast(t('toast.copied'));
+  } catch { /* partage annulé */ }
+}
+
+// Position du client sur la carte (ne change pas le point de départ des trajets : l'hôtel)
+let locWatch = null, locMarker = null, locFirst = true;
+function toggleLocate() {
+  const btn = $('#btnLocate');
+  if (locWatch != null) {
+    navigator.geolocation.clearWatch(locWatch);
+    locWatch = null; locMarker?.remove(); locMarker = null; btn.classList.remove('on');
+    return;
+  }
+  if (!navigator.geolocation) { toast(t('loc.unsupported')); return; }
+  locFirst = true;
+  btn.classList.add('on');
+  locWatch = navigator.geolocation.watchPosition((pos) => {
+    const ll = [pos.coords.latitude, pos.coords.longitude];
+    if (!locMarker) locMarker = L.marker(ll, { interactive: false, keyboard: false, zIndexOffset: 4500, icon: L.divIcon({ className: 'me-pin', iconSize: [0, 0], html: '<i></i>' }) }).addTo(map);
+    else locMarker.setLatLng(ll);
+    if (locFirst) {
+      locFirst = false;
+      if (map.options.maxBounds.contains(ll)) map.flyTo(ll, 16, { duration: 0.8 });
+      else toast(t('loc.far'));
+    }
+  }, () => { toast(t('loc.denied')); if (locWatch != null) toggleLocate(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+}
+
 // ------------------------------------------------------------------ Utilitaires UI
 function openModal(html) {
+  $('#modal').classList.remove('modal--poster');
   $('#modal .modal__box').innerHTML = html;
   $('#modal').hidden = false;
 }
-function closeModal() { $('#modal').hidden = true; }
+function closeModal() { $('#modal').hidden = true; $('#modal').classList.remove('modal--poster'); }
 let toastTimer;
 function toast(msg) {
   const el = $('#toast');
