@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffd23f">
+  <meta name="description" content="Carte interactive des bars et restaurants de Bordeaux pour la réception de l'hôtel.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Bordeaux à la carte">
+  <title>Bordeaux à la carte</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="img/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/icon-192.png">
+  <link rel="preload" href="fonts/bangers-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app" class="is-loading">
+
+    <!-- Panneau de gauche : recherche, filtres, liste -->
+    <aside id="panel" class="panel" aria-label="Recherche et filtres">
+      <button class="sheet-handle" id="sheetHandle" aria-label="Agrandir ou réduire le panneau"><span></span></button>
+      <header class="brand">
+        <div class="brand__logo" aria-hidden="true"><span>🍽️</span></div>
+        <div class="brand__text">
+          <h1>Bordeaux <span>à la carte !</span></h1>
+          <p class="brand__sub">Départ : <b>🏨 Ibis Euratlantique</b></p>
+        </div>
+        <button id="installBtn" class="btn btn--small btn--pop" hidden>⬇ Installer</button>
+      </header>
+
+      <div class="search">
+        <span class="search__icon" aria-hidden="true">🔎</span>
+        <input id="q" type="search" autocomplete="off" placeholder="Nom, cuisine, rue…" aria-label="Rechercher">
+        <button id="clearQ" class="search__clear" aria-label="Effacer" hidden>✕</button>
+      </div>
+
+      <div class="when" id="when" role="group" aria-label="Statut d'ouverture à quel moment">
+        <span class="when__label">🕒 Statut</span>
+        <button data-when="now" class="on">Maintenant</button>
+        <button data-when="midi">Midi</button>
+        <button data-when="soir">20h</button>
+        <button data-when="tard">23h</button>
+        <label class="when__custom" title="Choisir une date et une heure">
+          📅<input type="datetime-local" id="whenCustom" aria-label="Date et heure personnalisées">
+        </label>
+      </div>
+
+      <section class="filters" aria-label="Filtres">
+        <div class="chips" id="typeChips"></div>
+        <div class="chips chips--cuisine" id="cuisineChips"></div>
+        <div class="filters__row">
+          <div class="seg" id="priceSeg" role="group" aria-label="Prix">
+            <button data-p="1" title="Pas cher">€</button>
+            <button data-p="2" title="Moyen">€€</button>
+            <button data-p="3" title="Élevé">€€€</button>
+          </div>
+          <label class="walkmax">🚶
+            <select id="walkMax" aria-label="Temps de marche maximum">
+              <option value="0">Toutes distances</option>
+              <option value="10">≤ 10 min à pied</option>
+              <option value="15">≤ 15 min</option>
+              <option value="20">≤ 20 min</option>
+              <option value="30">≤ 30 min</option>
+            </select>
+          </label>
+        </div>
+        <div class="chips chips--toggles" id="toggleChips">
+          <button data-t="open">🟢 Ouvert</button>
+          <button data-t="fav">❤️ Coups de cœur</button>
+          <button data-t="ts">☀️ Terrasse</button>
+          <button data-t="vg">🥗 Végé</button>
+          <button data-t="wc">♿ Accessible</button>
+        </div>
+      </section>
+
+      <div class="results-head">
+        <b id="count">…</b>
+        <select id="sort" aria-label="Trier">
+          <option value="dist">Plus proches</option>
+          <option value="open">Ouverts d'abord</option>
+          <option value="stars">Mieux notés</option>
+          <option value="name">A → Z</option>
+        </select>
+        <button id="resetBtn" class="btn btn--ghost btn--small" title="Réinitialiser les filtres">↺</button>
+      </div>
+      <ul id="list" class="list" aria-live="polite"></ul>
+    </aside>
+
+    <!-- Carte -->
+    <main id="mapWrap" class="map-wrap">
+      <div id="map" aria-label="Carte de Bordeaux"></div>
+      <div class="map-tools">
+        <button id="btnRandom" class="btn btn--pop btn--big" title="Tirer un lieu au hasard parmi les résultats">🎲 Surprends-moi !</button>
+        <button id="btnHotel" class="btn btn--round" title="Recentrer sur l'hôtel">🏨</button>
+        <button id="btnSettings" class="btn btn--round" title="Réglages, aide et partage">⚙️</button>
+      </div>
+      <div class="legend" aria-label="Légende">
+        <span><i class="light light--open"></i>Ouvert</span>
+        <span><i class="light light--closing"></i>Ferme bientôt</span>
+        <span><i class="light light--closed"></i>Fermé</span>
+        <span><i class="light light--unknown"></i>Inconnu</span>
+      </div>
+      <div id="whenBanner" class="when-banner" hidden></div>
+      <div id="hoverCard" class="hover-card" hidden></div>
+      <div id="toast" class="toast" role="status"></div>
+      <div class="loader" id="loader"><div class="loader__burst">CHARGEMENT…</div></div>
+    </main>
+
+    <!-- Fiche détaillée -->
+    <section id="detail" class="detail" aria-hidden="true" aria-label="Fiche du lieu"></section>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__box" role="dialog" aria-modal="true"></div>
+  </div>
+  <div id="slot" class="slot" hidden></div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/leaflet.markercluster.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

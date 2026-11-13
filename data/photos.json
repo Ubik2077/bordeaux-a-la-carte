@@ -1,0 +1,140 @@
+{
+ "francaise": {
+  "src": "img/photos/francaise.jpg",
+  "author": "Roboppy at English Wikipedia",
+  "license": "Public domain",
+  "page": "https://commons.wikimedia.org/wiki/File:Confitdecanard.jpg"
+ },
+ "pizza": {
+  "src": "img/photos/pizza.jpg",
+  "author": "Bex Walton from London, England",
+  "license": "CC BY 2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Neapolitan_pizza_at_Trappica_(48701940197).jpg"
+ },
+ "italienne": {
+  "src": "img/photos/italienne.jpg",
+  "author": "Javier Somoza",
+  "license": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Espaguetis_carbonara.jpg"
+ },
+ "japonaise": {
+  "src": "img/photos/japonaise.jpg",
+  "author": "chidorian from Japan",
+  "license": "CC BY-SA 2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Sushi_platter.jpg"
+ },
+ "asiatique": {
+  "src": "img/photos/asiatique.jpg",
+  "author": "SerraKnightz",
+  "license": "CC BY 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Bowl_of_Meatball_pho.jpg"
+ },
+ "burger": {
+  "src": "img/photos/burger.jpg",
+  "author": "Hongreddotbrewhouse",
+  "license": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:RedDot_Burger.jpg"
+ },
+ "orientale": {
+  "src": "img/photos/orientale.jpg",
+  "author": "Wikimedia Commons",
+  "license": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:D%C3%B6ner_kebab_slicing.jpg"
+ },
+ "indienne": {
+  "src": "img/photos/indienne.jpg",
+  "author": "Michael Hays",
+  "license": "CC BY 2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Chicken_tikka_masala_(cropped).jpg"
+ },
+ "fruitsdemer": {
+  "src": "img/photos/fruitsdemer.jpg",
+  "author": "MyName (Pedroserafin)",
+  "license": "Public domain",
+  "page": "https://commons.wikimedia.org/wiki/File:Mariscada.jpg"
+ },
+ "tapas": {
+  "src": "img/photos/tapas.jpg",
+  "author": "Elemaki",
+  "license": "CC BY 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:TapasenBarcelona.JPG"
+ },
+ "latino": {
+  "src": "img/photos/latino.jpg",
+  "author": "Larry Miller",
+  "license": "CC BY-SA 2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:001_Tacos_de_carnitas,_carne_asada_y_al_pastor.jpg"
+ },
+ "africaine": {
+  "src": "img/photos/africaine.jpg",
+  "author": "Lmmima",
+  "license": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Moroccan_cuscus,_from_Casablanca,_September_2018.jpg"
+ },
+ "vege": {
+  "src": "img/photos/vege.jpg",
+  "author": "PizzaMan",
+  "license": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:BuddhaBowlLot.jpg"
+ },
+ "creperie": {
+  "src": "img/photos/creperie.jpg",
+  "author": "David Monniaux",
+  "license": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Crepes_dsc07085.jpg"
+ },
+ "grill": {
+  "src": "img/photos/grill.jpg",
+  "author": "Missvain",
+  "license": "CC BY 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Reel_and_Brand_-_September_2021_-_Sarah_Stierch_05.jpg"
+ },
+ "sucre": {
+  "src": "img/photos/sucre.jpg",
+  "author": "Roboppy at English Wikipedia",
+  "license": "CC BY-SA 2.5",
+  "page": "https://commons.wikimedia.org/wiki/File:Caneles_stemilion.jpg"
+ },
+ "autre": {
+  "src": "img/photos/autre.jpg",
+  "author": "Jacques Lameloise - Editer par Arnaud 25",
+  "license": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Jacques_Lameloise,_escab%C3%A8che_d%27%C3%A9crevisses_sur_gaspacho_d%27asperge_et_cresson.jpg"
+ },
+ "bar": {
+  "src": "img/photos/bar.jpg",
+  "author": "Ralf Roletschek",
+  "license": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:15-09-26-RalfR-WLC-0084.jpg"
+ },
+ "wine": {
+  "src": "img/photos/wine.jpg",
+  "author": "André Karwath aka Aka",
+  "license": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Red_Wine_Glass.jpg"
+ },
+ "pub": {
+  "src": "img/photos/pub.jpg",
+  "author": "Sietske at Dutch Wikipedia",
+  "license": "CC BY-SA 3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Michaeljacksonbierglazen.jpg"
+ },
+ "club": {
+  "src": "img/photos/club.jpg",
+  "author": "Malagalabombonera",
+  "license": "CC BY-SA 4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Wikipedia_space_ibiza(03).jpg"
+ },
+ "cafe": {
+  "src": "img/photos/cafe.jpg",
+  "author": "Tim Boyd from Brooklyn",
+  "license": "CC BY 2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Caf%C3%A9_au_lait.jpg"
+ },
+ "fastfood": {
+  "src": "img/photos/fastfood.jpg",
+  "author": "StockSnap",
+  "license": "CC0",
+  "page": "https://commons.wikimedia.org/wiki/File:French_Fries.JPG"
+ }
+}
