@@ -31,7 +31,6 @@
         <div class="brand__logo" aria-hidden="true"><span>🍽️</span></div>
         <div class="brand__text">
           <h1><span data-i18n="brand.a">Bordeaux</span> <span class="brand__b" data-i18n="brand.b">à la carte !</span></h1>
-          <p class="brand__sub"><span data-i18n="brand.from">Départ :</span> <b>🏨 Ibis Euratlantique</b></p>
         </div>
         <div class="brand__btns">
           <button id="langBtn" class="btn btn--small" data-i18n="lang.btn" data-i18n-title="lang.title">🌐 EN</button>
@@ -44,6 +43,10 @@
         <input id="q" type="search" autocomplete="off" data-i18n-ph="search.ph" data-i18n-aria="search.label" placeholder="Nom, cuisine, rue…">
         <button id="clearQ" class="search__clear" data-i18n-aria="clear" hidden>✕</button>
       </div>
+
+      <button id="originBtn" class="origin-btn" data-i18n-title="origin.title">
+        <span data-i18n="origin.label">🚩 Départ :</span> <b id="originName">🏨 Ibis Euratlantique</b> <span class="origin-btn__chev">▾</span>
+      </button>
 
       <div class="when" id="when" role="group" data-i18n-aria="when.group">
         <span class="when__label" data-i18n="when.label">🕒 Statut</span>
@@ -107,6 +110,7 @@
         <span><i class="light light--unknown"></i><span data-i18n="st.unknown">Inconnu</span></span>
       </div>
       <div id="whenBanner" class="when-banner" hidden></div>
+      <div id="originBanner" class="origin-banner" hidden><span id="originBannerTxt"></span><button id="originReset" data-i18n-title="origin.reset">✕</button></div>
       <div id="hoverCard" class="hover-card" hidden></div>
       <div id="toast" class="toast" role="status"></div>
       <div class="loader" id="loader"><div class="loader__burst" data-i18n="loading">CHARGEMENT…</div></div>

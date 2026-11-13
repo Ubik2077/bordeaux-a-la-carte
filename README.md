@@ -7,6 +7,7 @@ Carte interactive style BD des **bars et restaurants de Bordeaux**, pensée pour
 - Voyant **🟢 ouvert / 🟠 ferme bientôt / 🔴 fermé / ⚪ inconnu**, mis à jour chaque minute
 - Bouton **🕒 Statut** : voir qui sera ouvert *ce midi*, *à 20h*, *à 23h* ou à une date précise
 - **Vrais itinéraires depuis l'hôtel**, calculés hors ligne sur le réseau de rues (sens uniques et rues piétonnes respectés) : à pied, tram TBM (lignes et correspondances), vélo, taxi et **voiture** (jusqu'au parking public le plus proche du lieu, puis à pied), avec durée, prix et badges « le plus rapide » / « le plus économique »
+- **Point de départ modifiable** (🚩 sous la recherche) : l'hôtel par défaut, ou ma position, un point touché sur la carte, un lieu, un arrêt de tram ou un monument. Le bouton « 🚩 Partir d'ici » dans une fiche permet d'enchaîner, par exemple le restaurant puis un bar. Le choix n'est pas mémorisé : au rechargement, on repart de l'hôtel
 - **Version anglaise** : bouton 🌐 EN / FR, toute l'app est traduite (fiches, horaires, trajets, QR code, monuments)
 - **QR code** : le client scanne et repart avec l'itinéraire Google Maps sur son téléphone
 - **🎲 Surprends-moi !** : tirage au sort parmi les résultats
@@ -21,6 +22,7 @@ Carte interactive style BD des **bars et restaurants de Bordeaux**, pensée pour
 | Cliquer une icône ou une ligne de la liste | Fiche complète + itinéraire animé sur la carte |
 | Cliquer une catégorie | L'afficher / la masquer |
 | Double-cliquer une catégorie | N'afficher qu'elle |
+| « 🚩 Départ » | Changer le point de départ des trajets (✕ sur la carte pour revenir à l'hôtel) |
 | `/` | Aller dans la recherche |
 | `Échap` | Fermer la fiche ou la fenêtre |
 

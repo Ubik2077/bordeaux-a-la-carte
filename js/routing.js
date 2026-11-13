@@ -9,21 +9,35 @@ import { RoadGraph, hav } from './graph.js';
 export const dist = hav;
 const WALK = (TRAVEL.walkKmh * 1000) / 60; // m / min
 const BIKE = (TRAVEL.bikeKmh * 1000) / 60;
-const HOTEL_PT = [HOTEL.la, HOTEL.lo];
+// Point de départ des trajets : l'hôtel par défaut, modifiable (position, lieu, point de la carte)
+let O = { la: HOTEL.la, lo: HOTEL.lo, kind: 'hotel' };
+const OPT = () => [O.la, O.lo];
 
 let G = null, footTree = null, carTree = null, hFoot = null, hCar = null;
 let parks = [];
-let net = null;
+let net = null, tramData = null;
 
 export function initRouting({ graph, tram, parkings }) {
   G = new RoadGraph(graph);
-  hFoot = G.nearest(HOTEL.la, HOTEL.lo, 'foot');
-  hCar = G.nearest(HOTEL.la, HOTEL.lo, 'car');
-  footTree = G.tree('foot', hFoot.node);
-  carTree = G.tree('car', hCar.node);
+  tramData = tram;
   parks = parkings.filter((p) => snap(p, 'car'));
-  initTram(tram);
+  buildFromOrigin();
 }
+
+// Recalcule les plus courts chemins depuis le point de départ (≈ 30 ms)
+function buildFromOrigin() {
+  hFoot = G.nearest(O.la, O.lo, 'foot');
+  hCar = G.nearest(O.la, O.lo, 'car');
+  footTree = hFoot ? G.tree('foot', hFoot.node) : null;
+  carTree = hCar ? G.tree('car', hCar.node) : null;
+  initTram(tramData);
+}
+
+export function setOrigin(o) {
+  O = o ? { ...o } : { la: HOTEL.la, lo: HOTEL.lo, kind: 'hotel' };
+  if (G) buildFromOrigin();
+}
+export const getOrigin = () => O;
 
 // Carrefour le plus proche d'un point (mis en cache sur l'objet)
 function snap(p, mode) {
@@ -35,21 +49,21 @@ function snap(p, mode) {
 // Distance à pied réelle (m) depuis l'hôtel, ou null si inconnue
 function footFromHotel(p) {
   const s = snap(p, 'foot');
-  if (!s) return null;
+  if (!s || !footTree) return null;
   const d = footTree.dist[s.node];
-  return isFinite(d) ? d + s.d + hFoot.d : null;
+  return isFinite(d) ? d + s.d + (hFoot?.d || 0) : null;
 }
 
 export function walkInfo(v) {
-  const straight = hav(HOTEL.la, HOTEL.lo, v.la, v.lo);
+  const straight = hav(O.la, O.lo, v.la, v.lo);
   const d = footFromHotel(v) ?? straight * TRAVEL.detour;
   return { d, min: d / WALK };
 }
 
 function walkPathFromHotel(p) {
   const s = snap(p, 'foot');
-  const pts = s && G.treePath(footTree, s.node);
-  return pts ? [HOTEL_PT, ...pts, [p.la, p.lo]] : [HOTEL_PT, [p.la, p.lo]];
+  const pts = s && footTree && G.treePath(footTree, s.node);
+  return pts ? [OPT(), ...pts, [p.la, p.lo]] : [OPT(), [p.la, p.lo]];
 }
 
 // Marche entre deux points : estimation rapide, ou vrai chemin si withPath
@@ -69,14 +83,14 @@ function walkBetween(a, b, withPath) {
 // Trajet voiture depuis l'hôtel jusqu'à un point
 function driveTo(p, withPath) {
   const s = snap(p, 'car');
-  if (!s || !isFinite(carTree.dist[s.node])) {
-    const m = hav(HOTEL.la, HOTEL.lo, p.la, p.lo) * TRAVEL.detour;
-    return { m, min: m / ((TRAVEL.taxiKmh * 1000) / 60), pts: [HOTEL_PT, [p.la, p.lo]] };
+  if (!s || !carTree || !isFinite(carTree.dist[s.node])) {
+    const m = hav(O.la, O.lo, p.la, p.lo) * TRAVEL.detour;
+    return { m, min: m / ((TRAVEL.taxiKmh * 1000) / 60), pts: [OPT(), [p.la, p.lo]] };
   }
-  const min = (carTree.dist[s.node] / 60) * TRAVEL.trafficFactor + (hCar.d + s.d) / WALK * 0.3;
-  const m = carTree.len[s.node] + s.d + hCar.d;
-  let pts = [HOTEL_PT, [p.la, p.lo]];
-  if (withPath) { const tp = G.treePath(carTree, s.node); if (tp) pts = [HOTEL_PT, ...tp, [p.la, p.lo]]; }
+  const min = (carTree.dist[s.node] / 60) * TRAVEL.trafficFactor + ((hCar?.d || 0) + s.d) / WALK * 0.3;
+  const m = carTree.len[s.node] + s.d + (hCar?.d || 0);
+  let pts = [OPT(), [p.la, p.lo]];
+  if (withPath) { const tp = G.treePath(carTree, s.node); if (tp) pts = [OPT(), ...tp, [p.la, p.lo]]; }
   return { m, min, pts };
 }
 
@@ -104,8 +118,8 @@ function initTram(tram) {
     pq.push([t, k]);
   };
   for (const s of tram.stops) {
-    if (hav(HOTEL.la, HOTEL.lo, s.la, s.lo) > TRAVEL.maxWalkToStopM) continue;
-    const walk = (footFromHotel(s) ?? hav(HOTEL.la, HOTEL.lo, s.la, s.lo) * TRAVEL.detour) / WALK;
+    if (hav(O.la, O.lo, s.la, s.lo) > TRAVEL.maxWalkToStopM) continue;
+    const walk = (footFromHotel(s) ?? hav(O.la, O.lo, s.la, s.lo) * TRAVEL.detour) / WALK;
     for (const line of s.lines) push(s.name + '|' + line, walk + TRAVEL.tramWaitMin, null, { walk });
   }
   while (pq.length) {
@@ -141,7 +155,7 @@ function tramLegs(key) {
 export function travelOptions(v, { paths = false } = {}) {
   const w = walkInfo(v);
   const opts = [];
-  const walkPts = paths ? walkPathFromHotel(v) : [HOTEL_PT, [v.la, v.lo]];
+  const walkPts = paths ? walkPathFromHotel(v) : [OPT(), [v.la, v.lo]];
 
   opts.push({ mode: 'walk', icon: '🚶', min: w.min, cost: 0, m: w.d, gmode: 'walking', path: [{ kind: 'walk', pts: walkPts }] });
 
@@ -164,7 +178,7 @@ export function travelOptions(v, { paths = false } = {}) {
         const first = net.best.get(legs[0].stops[0] + '|' + legs[0].line);
         const end = walkBetween(dest, v, paths);
         const min = net.atStop.get(bestStop).t + end.min;
-        const path = [{ kind: 'walk', pts: paths ? walkPathFromHotel(board) : [HOTEL_PT, [board.la, board.lo]] }];
+        const path = [{ kind: 'walk', pts: paths ? walkPathFromHotel(board) : [OPT(), [board.la, board.lo]] }];
         for (const L of legs) path.push({ kind: 'tram', colour: L.colour, pts: L.stops.map((n) => [net.stops.get(n).la, net.stops.get(n).lo]) });
         path.push({ kind: 'walk', pts: end.pts });
         opts.push({
@@ -231,7 +245,9 @@ export function travelOptions(v, { paths = false } = {}) {
 
 export function gmapsUrl(v, o) {
   const dest = o?.dest || [v.la, v.lo];
-  return `https://www.google.com/maps/dir/?api=1&origin=${HOTEL.la},${HOTEL.lo}&destination=${dest[0]},${dest[1]}&travelmode=${o?.gmode || 'walking'}`;
+  // depuis « ma position », Google Maps utilise directement la localisation du téléphone
+  const origin = O.kind === 'me' ? '' : `&origin=${O.la},${O.lo}`;
+  return `https://www.google.com/maps/dir/?api=1${origin}&destination=${dest[0]},${dest[1]}&travelmode=${o?.gmode || 'walking'}`;
 }
 
 export const fmtMin = (m) => {

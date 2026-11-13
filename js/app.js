@@ -1,7 +1,7 @@
 // Bordeaux à la carte — application principale
-import { HOTEL, TYPES, TYPE_FILTERS, DEFAULT_TYPES, CUISINES } from './config.js';
+import { HOTEL, TYPES, TYPE_FILTERS, DEFAULT_TYPES, CUISINES, LANDMARKS } from './config.js';
 import { hoursStatus, weekTable, parseHours } from './hours.js';
-import { initRouting, travelOptions, walkInfo, gmapsUrl, fmtMin } from './routing.js';
+import { initRouting, travelOptions, walkInfo, gmapsUrl, fmtMin, setOrigin, getOrigin } from './routing.js';
 import { drawBasemap, setLandmarkLang } from './basemap.js';
 import { t, getLang, setLang, applyStatic, fmtMoney, fmtDist, fmtDate } from './i18n.js';
 import { sync, fetchPublicNotes } from './sync.js';
@@ -71,7 +71,7 @@ const saveFilters = () => store.set(FILTER_KEY, {
   types: [...state.types], cuisines: [...state.cuisines], prices: [...state.prices], toggles: [...state.toggles], walkMax: state.walkMax, sort: state.sort,
 });
 
-let venues = [], byId = new Map(), photos = {}, dataDate = '', nbParkings = 0;
+let venues = [], byId = new Map(), photos = {}, dataDate = '', nbParkings = 0, tramStops = [];
 let map, cluster, routeLayer, traveler, travelerRAF, hotelMarker;
 let filtered = [];
 let selected = null;
@@ -79,7 +79,6 @@ let listLimit = 60;
 
 // ------------------------------------------------------------------ Démarrage
 if (CLIENT) {
-  $('.brand__sub [data-i18n]').dataset.i18n = 'brand.client';
   $('#toggleChips [data-t=fav]').dataset.i18n = 'tg.favClient';
   $('#btnSettings').dataset.i18nTitle = 'help.title';
   $('#btnSettings').textContent = 'ℹ️';
@@ -102,6 +101,7 @@ async function init() {
   dataDate = vj.updated;
   nbParkings = parkings.length;
   initRouting({ graph, tram, parkings });
+  tramStops = tram.stops;
 
   venues = vj.venues;
   for (const v of venues) {
@@ -171,7 +171,7 @@ async function init() {
   setTimeout(() => toast(t('toast.loaded', { n: venues.length, d: fmtDate(dataDate) })), 600);
 }
 
-const hotelIcon = () => L.divIcon({ className: 'hotel-pin', iconSize: [0, 0], html: `<div class="h">🏨</div><div class="bubble">${t(CLIENT ? 'hotel.bubbleClient' : 'hotel.bubble')}</div>` });
+const hotelIcon = () => L.divIcon({ className: 'hotel-pin', iconSize: [0, 0], html: `<div class="h">🏨</div><div class="bubble">${t(getOrigin().kind !== 'hotel' ? 'hotel.name' : CLIENT ? 'hotel.bubbleClient' : 'hotel.bubble')}</div>` });
 
 // Recherche : on indexe les libellés dans les deux langues
 function buildSearchIndex() {
@@ -195,7 +195,7 @@ function switchLang() {
   buildWalkOptions();
   buildFilterUI();
   setLandmarkLang(getLang());
-  hotelMarker.setIcon(hotelIcon());
+  updateOriginUI();
   $('#hoverCard').hidden = true;
   closeModal();
   refreshStatuses();
@@ -567,12 +567,15 @@ function bindUI() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (!$('#modal').hidden) closeModal();
+      if (pickingOrigin) cancelPick();
+      else if (!$('#modal').hidden) closeModal();
       else if (selected) closeDetail();
     }
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') { e.preventDefault(); $('#q').focus(); }
   });
   $('#modal').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeModal(); });
+  $('#originBtn').addEventListener('click', openOriginPicker);
+  $('#originReset').addEventListener('click', () => changeOrigin(null));
 
   window.addEventListener('online', () => toast(t('toast.online')));
   window.addEventListener('offline', () => toast(t('toast.offline')));
@@ -672,13 +675,15 @@ function renderDetail(v, { keepRoute = false } = {}) {
             ${o.fastest || o.cheapest ? `<span class="tcard__badges">${o.fastest ? `<span class="badge">${t('b.fast')}</span>` : ''}${o.cheapest ? `<span class="badge badge--cheap">${t('b.cheap')}</span>` : ''}</span>` : ''}
           </button>`).join('')}
       </div>
-      <p class="estim">${t('d.estim')}</p>
+      <p class="estim">${t('d.estim', { from: esc(fromText()) })}</p>
       <div class="actions">
         ${CLIENT
     ? `<a class="btn btn--pop" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def))}" target="_blank" rel="noopener">${t('d.gmapsGo')}</a>
-           <button class="btn" id="shareBtn">${t('d.share')}</button>`
+           <button class="btn" id="shareBtn">${t('d.share')}</button>
+           ${fromHereBtn(v)}`
     : `<button class="btn btn--pop" id="qrBtn">${t('d.qr')}</button>
-           <a class="btn" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def))}" target="_blank" rel="noopener">${t('d.gmaps')}</a>`}
+           <a class="btn" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def))}" target="_blank" rel="noopener">${t('d.gmaps')}</a>
+           ${fromHereBtn(v)}`}
       </div>
 
       <h3>${t('d.hours')}</h3>
@@ -718,6 +723,7 @@ function renderDetail(v, { keepRoute = false } = {}) {
     $('#gmapsBtn').href = gmapsUrl(v, o);
     drawRoute(v, o, true);
   };
+  if ($('#fromHereBtn')) $('#fromHereBtn').onclick = () => startFrom(v);
   if (CLIENT) {
     $('#shareBtn').onclick = () => shareVenue(v, tr.opts.find((o) => o.mode === ($('#detail .tcard.on')?.dataset.mode || def)));
     if (!keepRoute) drawRoute(v, tr.opts.find((o) => o.mode === def), true);
@@ -844,7 +850,7 @@ function openQR(v, tr, mode) {
     $('#qrBox').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
     $$('.qr-modes button').forEach((b) => b.classList.toggle('on', b.dataset.m === o.mode));
     $('#qrLink').href = url;
-    $('#qrInfo').textContent = t('qr.info', { m: `${o.icon} ${t('m.' + o.mode)}`, t: fmtMin(o.min) });
+    $('#qrInfo').textContent = t('qr.info', { m: `${o.icon} ${t('m.' + o.mode)}`, t: fmtMin(o.min), from: fromText() });
     $('#qrPark').textContent = o.parking ? t('qr.park', { p: o.parking }) : '';
   };
   openModal(`
@@ -989,6 +995,145 @@ async function importStaff(e) {
     venues.forEach((v) => v.marker.setIcon(pinIcon(v)));
     applyFilters(); closeModal(); toast(t('s.imported', { n }));
   } catch { toast(t('s.badFile')); }
+}
+
+// ------------------------------------------------------------------ Point de départ
+let originMarker = null, pickingOrigin = false, originIndex = null;
+const isHere = (v) => getOrigin().kind === 'place' && getOrigin().la === v.la && getOrigin().lo === v.lo;
+
+function originName(o = getOrigin()) {
+  if (o.kind === 'hotel') return `🏨 ${HOTEL.short}`;
+  if (o.kind === 'me') return `📍 ${t('origin.me')}`;
+  if (o.kind === 'map') return `🗺️ ${t('origin.mapPoint')}`;
+  return `📌 ${o.label}`;
+}
+function fromText() {
+  const o = getOrigin();
+  return o.kind === 'hotel' ? t('from.hotel') : o.kind === 'me' ? t('from.me') : o.kind === 'map' ? t('from.map') : o.label;
+}
+function fromHereBtn(v) { return isHere(v) ? '' : `<button class="btn" id="fromHereBtn">🚩 ${t('origin.fromHere')}</button>`; }
+
+// Change le point de départ et recalcule tout (temps de marche, tri, fiche, trajets)
+function changeOrigin(o, { silent = false } = {}) {
+  if (o && !map.options.maxBounds.contains([o.la, o.lo])) { toast(t('origin.out')); return false; }
+  setOrigin(o);
+  for (const v of venues) v.walk = walkInfo(v);
+  updateOriginUI();
+  closeModal();
+  applyFilters();
+  if (selected) renderDetail(selected);
+  else { clearRoute(); if (o) map.flyTo([o.la, o.lo], Math.max(map.getZoom(), 15), { duration: 0.8 }); }
+  if (!silent) toast(t('origin.set', { x: originName() }));
+  return true;
+}
+
+function updateOriginUI() {
+  const o = getOrigin(), isHotel = o.kind === 'hotel';
+  $('#originName').textContent = originName();
+  $('#originBtn').classList.toggle('custom', !isHotel);
+  $('#originBanner').hidden = isHotel;
+  $('#originBannerTxt').textContent = t('origin.banner', { x: originName() });
+  originMarker?.remove(); originMarker = null;
+  if (!isHotel) {
+    originMarker = L.marker([o.la, o.lo], {
+      zIndexOffset: 4800, keyboard: false, interactive: false,
+      icon: L.divIcon({ className: 'origin-pin', iconSize: [0, 0], html: `<div class="f">🚩</div><div class="bubble">${t('origin.pin')}</div>` }),
+    }).addTo(map);
+  }
+  hotelMarker.setIcon(hotelIcon());
+}
+
+// « Partir d'ici » depuis la fiche d'un lieu (ex. après le restaurant, trouver un bar)
+function startFrom(v) {
+  closeDetail();
+  if (changeOrigin({ la: v.la, lo: v.lo, kind: 'place', label: v.n }, { silent: true })) {
+    toast(t('origin.fromHereDone', { x: v.n }));
+    if (isMobile()) $('#panel').classList.add('expanded');
+  }
+}
+
+function cancelPick() {
+  pickingOrigin = false;
+  $('#map').classList.remove('picking');
+  map.off('click', onPickClick);
+}
+function onPickClick(e) {
+  cancelPick();
+  changeOrigin({ la: e.latlng.lat, lo: e.latlng.lng, kind: 'map' });
+}
+
+function buildOriginIndex() {
+  const lang = getLang();
+  const items = [];
+  for (const l of LANDMARKS) items.push({ icon: l.i, label: lang === 'en' ? l.en || l.n : l.n, sub: '', la: l.la, lo: l.lo });
+  const seen = new Set();
+  for (const lm of tramStops) {
+    if (seen.has(lm.name)) continue; seen.add(lm.name);
+    items.push({ icon: '🚋', label: lm.name, sub: t('origin.stop') + ' ' + lm.lines.join(' '), la: lm.la, lo: lm.lo });
+  }
+  for (const v of venues) items.push({ icon: emojiOf(v), label: v.n, sub: typeLabel(v) + (v.a ? ' · ' + v.a : ''), la: v.la, lo: v.lo, venue: true });
+  for (const it of items) it.s = norm(it.label + ' ' + it.sub);
+  originIndex = { lang, items };
+}
+
+function openOriginPicker() {
+  if (!originIndex || originIndex.lang !== getLang()) buildOriginIndex();
+  const o = getOrigin();
+  openModal(`
+    <button class="btn btn--round x" data-close>✕</button>
+    <h2>${t('origin.title')}</h2>
+    <div class="origin-main">
+      <button class="origin-opt${o.kind === 'hotel' ? ' on' : ''}" data-o="hotel"><span>🏨</span><b>${t('origin.hotel')}</b><small>${esc(HOTEL.short)}</small></button>
+      <button class="origin-opt${o.kind === 'me' ? ' on' : ''}" data-o="me"><span>📍</span><b>${t('origin.me')}</b><small>${t('origin.meSub')}</small></button>
+      <button class="origin-opt${o.kind === 'map' ? ' on' : ''}" data-o="map"><span>🗺️</span><b>${t('origin.map')}</b><small>${t('origin.mapSub')}</small></button>
+    </div>
+    <div class="search origin-search"><span class="search__icon" aria-hidden="true">🔎</span><input id="originQ" type="search" autocomplete="off" placeholder="${esc(t('origin.ph'))}"></div>
+    <ul class="origin-results" id="originRes"></ul>
+    <p class="origin-quick-title">${t('origin.quick')}</p>
+    <div class="chips" id="originQuick">${LANDMARKS.slice(0, 10).map((l, i) => `<button class="chip" data-lm="${i}">${l.i} ${esc(getLang() === 'en' ? l.en || l.n : l.n)}</button>`).join('')}</div>`);
+  let found = [];
+  $('#originQ').oninput = (e) => {
+    const q = norm(e.target.value.trim());
+    if (q.length < 2) { $('#originRes').innerHTML = ''; return; }
+    const toks = q.split(/\s+/);
+    found = originIndex.items.filter((it) => toks.every((tk) => it.s.includes(tk)))
+      .sort((a, b) => (norm(b.label).startsWith(q) ? 1 : 0) - (norm(a.label).startsWith(q) ? 1 : 0) || (a.venue ? 1 : 0) - (b.venue ? 1 : 0))
+      .slice(0, 8);
+    $('#originRes').innerHTML = found.length
+      ? found.map((it, i) => `<li><button data-i="${i}"><span>${it.icon}</span><b>${esc(it.label)}</b><small>${esc(it.sub)}</small></button></li>`).join('')
+      : `<li class="empty-res">${t('origin.none')}</li>`;
+  };
+  $('#originRes').onclick = (e) => {
+    const b = e.target.closest('button[data-i]'); if (!b) return;
+    const it = found[+b.dataset.i];
+    changeOrigin({ la: it.la, lo: it.lo, kind: 'place', label: it.label });
+  };
+  $('#originQuick').onclick = (e) => {
+    const b = e.target.closest('[data-lm]'); if (!b) return;
+    const l = LANDMARKS[+b.dataset.lm];
+    changeOrigin({ la: l.la, lo: l.lo, kind: 'place', label: getLang() === 'en' ? l.en || l.n : l.n });
+  };
+  $('.origin-main').onclick = (e) => {
+    const b = e.target.closest('[data-o]'); if (!b) return;
+    if (b.dataset.o === 'hotel') changeOrigin(null);
+    else if (b.dataset.o === 'map') {
+      closeModal();
+      pickingOrigin = true;
+      $('#map').classList.add('picking');
+      if (isMobile()) $('#panel').classList.remove('expanded');
+      toast(t('origin.tapMap'));
+      setTimeout(() => map.once('click', onPickClick), 50);
+    } else {
+      if (!navigator.geolocation) { toast(t('loc.unsupported')); return; }
+      toast(t('origin.locating'));
+      navigator.geolocation.getCurrentPosition(
+        (pos) => changeOrigin({ la: pos.coords.latitude, lo: pos.coords.longitude, kind: 'me' }),
+        () => toast(t('loc.denied')),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+      );
+    }
+  };
+  setTimeout(() => $('#originQ')?.focus(), 100);
 }
 
 // ------------------------------------------------------------------ Version clients

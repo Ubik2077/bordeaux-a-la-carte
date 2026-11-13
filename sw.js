@@ -1,7 +1,7 @@
 // Service worker : met toute l'application en cache pour un usage hors ligne.
 // Les fichiers de l'app sont pris sur le réseau quand il est là, sinon dans le cache.
 // Incrémentez VERSION si vous ajoutez de nouveaux fichiers à la liste ASSETS.
-const VERSION = 'v6-2026-11-13';
+const VERSION = 'v8-2026-11-13';
 const CORE = `cb-core-${VERSION}`;
 const IMG = 'cb-img';
 
@@ -19,7 +19,11 @@ const ASSETS = [
 ];
 
 function fetchAndCache(req, revalidate = false) {
-  return fetch(req, revalidate ? { cache: 'no-cache' } : undefined).then((res) => {
+  // Une requête de navigation ne peut pas être recopiée avec des options : on repart de son URL
+  const r = !revalidate ? req : req.mode === 'navigate'
+    ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' })
+    : new Request(req, { cache: 'no-cache' });
+  return fetch(r).then((res) => {
     if (res.ok) { const copy = res.clone(); caches.open(CORE).then((c) => c.put(req, copy)); }
     return res;
   });
