@@ -750,7 +750,8 @@ function openSettings() {
       <section>
         <h3>📲 Installation & hors ligne</h3>
         <p>${navigator.serviceWorker?.controller ? '✅ L’app est disponible hors ligne sur cet appareil.' : '⏳ Le mode hors ligne s’active après le premier chargement (en https ou en local).'}</p>
-        <p>Sur ordinateur (Chrome/Edge) : icône « Installer » dans la barre d’adresse. Sur iPhone : Partager → « Sur l’écran d’accueil ». Sur Android : menu ⋮ → « Installer l’application ».</p>
+        <p>${isStandalone() ? '✅ Vous utilisez l’app installée.' : 'L’app n’est pas encore installée sur cet appareil.'}</p>
+        <div class="row"><button class="btn btn--pop" id="guideBtn">📲 Comment installer ?</button></div>
       </section>
       <section>
         <h3>ℹ️ Données</h3>
@@ -758,6 +759,7 @@ function openSettings() {
         <details><summary>Crédits photos (Wikimedia Commons)</summary><ul class="credits">${credits}</ul></details>
       </section>
     </div>`);
+  $('#guideBtn').onclick = openInstallGuide;
   $('#expBtn').onclick = exportStaff;
   $('#impFile').onchange = importStaff;
   $('#wipeBtn').onclick = () => {
@@ -825,20 +827,139 @@ function frDate(iso) {
   return `${d}/${m}/${y}`;
 }
 
-// ------------------------------------------------------------------ PWA
-let deferredPrompt;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  $('#installBtn').hidden = false;
-});
+// ------------------------------------------------------------------ PWA : installation
+// L'événement « beforeinstallprompt » est capturé très tôt dans index.html (window.__bip).
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+function detectDevice() {
+  const ua = navigator.userAgent;
+  const android = /Android/.test(ua);
+  // les iPad récents se présentent comme un Mac : on les reconnaît à l'écran tactile
+  const ios = !android && (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1));
+  const inApp = /FBAN|FBAV|Instagram|Line\/|WhatsApp|Snapchat|; wv\)|GSA\//.test(ua);
+  let browser = 'autre';
+  if (/SamsungBrowser/.test(ua)) browser = 'samsung';
+  else if (/Edg(e|A|iOS)?\//.test(ua)) browser = 'edge';
+  else if (/Firefox|FxiOS/.test(ua)) browser = 'firefox';
+  else if (/OPR\/|Opera/.test(ua)) browser = 'opera';
+  else if (navigator.brave) browser = 'brave';
+  else if (/CriOS|Chrome\//.test(ua)) browser = 'chrome';
+  else if (/Safari\//.test(ua)) browser = 'safari';
+  return { ios, android, mobile: ios || android, inApp, browser };
+}
+
+const BROWSER_NAMES = { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox', safari: 'Safari', samsung: 'Samsung Internet', brave: 'Brave', opera: 'Opera', autre: 'navigateur' };
+
+// Étapes d'installation selon l'appareil et le navigateur
+function installSteps(d) {
+  if (d.inApp) return { title: 'Navigateur intégré à une appli', steps: [
+    'Vous avez ouvert le lien depuis une appli (WhatsApp, Messenger, scanner de QR…) : l’installation y est impossible.',
+    `Touchez le menu ⋮ ou ⋯ puis <b>« Ouvrir dans ${d.ios ? 'Safari' : 'Chrome'} »</b>.`,
+    'Suivez ensuite les étapes affichées par le bouton « Installer ».'] };
+  if (d.ios) {
+    if (d.browser === 'safari') return { title: 'iPhone / iPad · Safari', steps: [
+      'Touchez le bouton <b>Partager</b> <span class="kbd">⬆︎</span> (carré avec une flèche, en bas de l’écran, ou en haut sur iPad).',
+      'Faites défiler et touchez <b>« Sur l’écran d’accueil »</b> <span class="kbd">⊞</span>.',
+      'Touchez <b>« Ajouter »</b> en haut à droite. L’icône apparaît sur l’écran d’accueil.'] };
+    return { title: `iPhone / iPad · ${BROWSER_NAMES[d.browser]}`, steps: [
+      'Touchez le bouton <b>Partager</b> <span class="kbd">⬆︎</span> (dans la barre d’adresse ou le menu ⋯).',
+      'Choisissez <b>« Sur l’écran d’accueil »</b>, puis <b>« Ajouter »</b>.',
+      'L’option n’apparaît pas ? Ouvrez l’adresse dans <b>Safari</b> : c’est le navigateur le plus fiable sur iPhone.'] };
+  }
+  if (d.android) {
+    if (d.browser === 'samsung') return { title: 'Android · Samsung Internet', steps: [
+      'Touchez le menu <span class="kbd">☰</span> en bas à droite.',
+      'Choisissez <b>« Ajouter la page à »</b> puis <b>« Écran d’accueil »</b>.',
+      'Validez avec <b>« Ajouter »</b>.'] };
+    if (d.browser === 'firefox') return { title: 'Android · Firefox', steps: [
+      'Touchez le menu <span class="kbd">⋮</span>.',
+      'Choisissez <b>« Installer »</b> ou <b>« Ajouter à l’écran d’accueil »</b>.',
+      'Validez avec <b>« Ajouter »</b>.'] };
+    return { title: `Android · ${BROWSER_NAMES[d.browser]}`, steps: [
+      'Touchez le menu <span class="kbd">⋮</span> en haut à droite.',
+      'Choisissez <b>« Installer l’application »</b> (ou <b>« Ajouter à l’écran d’accueil »</b> puis <b>« Installer »</b>).',
+      'Validez. L’icône apparaît sur l’écran d’accueil et dans la liste des applis.'] };
+  }
+  // Ordinateur
+  if (d.browser === 'edge') return { title: 'Ordinateur · Microsoft Edge', steps: [
+    'Cliquez l’icône <b>« Application disponible »</b> <span class="kbd">⊞</span> à droite de la barre d’adresse.',
+    'Sinon : menu <span class="kbd">⋯</span> → <b>« Applications »</b> → <b>« Installer ce site en tant qu’application »</b>.',
+    'Cliquez <b>« Installer »</b>. L’app s’ouvre dans sa propre fenêtre et peut être épinglée à la barre des tâches.'] };
+  if (d.browser === 'firefox') return { title: 'Ordinateur · Firefox', warn: true, steps: [
+    'Firefox ne sait pas installer d’applications web sur ordinateur (l’app fonctionne quand même, y compris hors ligne).',
+    'Pour l’installer, ouvrez cette même adresse dans <b>Microsoft Edge</b> (présent sur tous les PC Windows) ou <b>Google Chrome</b>, puis cliquez sur « Installer ».',
+    'Ou simplement : ajoutez un <b>favori</b> (Ctrl + D) ou un raccourci sur le bureau.'] };
+  if (d.browser === 'safari') return { title: 'Mac · Safari', steps: [
+    'Menu <b>Fichier</b> → <b>« Ajouter au Dock… »</b> (macOS Sonoma ou plus récent).',
+    'Cliquez <b>« Ajouter »</b>. L’app apparaît dans le Dock et le Launchpad.'] };
+  if (d.browser === 'brave') return { title: 'Ordinateur · Brave', steps: [
+    'Cliquez l’icône d’installation <span class="kbd">⤓</span> à droite de la barre d’adresse.',
+    'Sinon : menu <span class="kbd">≡</span> → <b>« Enregistrer et partager »</b> → <b>« Installer Bordeaux à la carte… »</b>.'] };
+  return { title: `Ordinateur · ${BROWSER_NAMES[d.browser]}`, steps: [
+    'Cliquez l’icône d’installation <span class="kbd">⤓</span> (petit écran avec une flèche) à droite de la barre d’adresse.',
+    'Sinon : menu <span class="kbd">⋮</span> → <b>« Caster, enregistrer et partager »</b> → <b>« Installer la page en tant qu’application… »</b>.',
+    'Cliquez <b>« Installer »</b>. L’app s’ouvre dans sa propre fenêtre et peut être épinglée à la barre des tâches.'] };
+}
+
+function openInstallGuide() {
+  const d = detectDevice();
+  const main = installSteps(d);
+  const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
+  const qr = window.qrcode(0, 'M');
+  qr.addData(appUrl); qr.make();
+  const others = [
+    installSteps({ ios: true, browser: 'safari' }),
+    installSteps({ android: true, browser: 'chrome' }),
+    installSteps({ android: true, browser: 'samsung' }),
+    installSteps({ browser: 'chrome' }),
+    installSteps({ browser: 'edge' }),
+  ].filter((o) => o.title !== main.title);
+  const list = (o) => `<ol class="steps">${o.steps.map((s) => `<li>${s}</li>`).join('')}</ol>`;
+  openModal(`
+    <button class="btn btn--round x" data-close>✕</button>
+    <h2>📲 Installer l’app</h2>
+    ${isStandalone() ? '<p class="ok-box">✅ Vous utilisez déjà l’app installée !</p>' : ''}
+    <div class="install-main${main.warn ? ' warn' : ''}">
+      <p class="install-device">Votre appareil : <b>${esc(main.title)}</b></p>
+      ${list(main)}
+    </div>
+    ${d.mobile ? '' : `
+    <div class="install-qr">
+      <div class="qr qr--small">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
+      <p><b>Installer sur un téléphone ?</b><br>Scannez ce code avec l’appareil photo, puis touchez « Installer » dans l’app.<br><small>${esc(appUrl)}</small></p>
+    </div>`}
+    <details class="install-others"><summary>Autres appareils</summary>
+      ${others.map((o) => `<h4>${esc(o.title)}</h4>${list(o)}`).join('')}
+    </details>
+    <p class="raw">Une fois installée, l’app s’ouvre depuis son icône et fonctionne même sans internet.</p>`);
+}
+
+function updateInstallButton() {
+  const btn = $('#installBtn');
+  btn.hidden = isStandalone();
+  btn.classList.toggle('btn--ready', !!window.__bip);
+}
+
 $('#installBtn').addEventListener('click', async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  $('#installBtn').hidden = true;
+  const bip = window.__bip;
+  if (bip) {
+    // Le navigateur sait installer directement : on ouvre sa fenêtre d'installation
+    bip.prompt();
+    const choice = await bip.userChoice.catch(() => null);
+    window.__bip = null;
+    updateInstallButton();
+    if (choice?.outcome !== 'accepted') openInstallGuide();
+  } else {
+    openInstallGuide();
+  }
 });
+window.addEventListener('bip-ready', updateInstallButton);
+window.addEventListener('appinstalled', () => {
+  window.__bip = null;
+  updateInstallButton();
+  toast('App installée ! Retrouvez-la avec son icône 🎉');
+});
+updateInstallButton();
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.register('sw.js').then((reg) => {

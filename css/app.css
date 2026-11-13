@@ -34,6 +34,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body {
   font-family: var(--font-body);
@@ -466,6 +467,24 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
 .settings p, .settings li { font-size: .92rem; line-height: 1.4; }
 .settings .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .credits { font-size: .78rem; max-height: 140px; overflow-y: auto; background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; }
+
+/* ---------- Guide d'installation ---------- */
+.btn--ready { animation: readyPulse 1.6s ease-in-out infinite; }
+@keyframes readyPulse { 0%,100% { box-shadow: 2px 2px 0 var(--ink); } 50% { box-shadow: 2px 2px 0 var(--ink), 0 0 0 6px rgba(255,90,54,.35); } }
+.install-main { background: #fff; border: var(--border); border-radius: 16px; padding: 10px 14px; box-shadow: var(--shadow-sm); margin: 10px 0; }
+.install-main.warn { background: #fff3d6; }
+.install-device { margin: 0 0 4px; }
+.steps { margin: 6px 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 6px; line-height: 1.35; }
+.steps li::marker { font-family: var(--font-title); color: var(--red); font-size: 1.1em; }
+.kbd { display: inline-block; min-width: 1.6em; text-align: center; border: 2px solid var(--ink); border-radius: 6px; background: var(--paper); padding: 0 .3em; font-weight: 700; line-height: 1.25; }
+.install-qr { display: flex; align-items: center; gap: 14px; margin: 12px 0; }
+.install-qr p { margin: 0; font-size: .9rem; }
+.install-qr small { color: var(--muted); word-break: break-all; }
+.qr--small { width: 130px; flex: 0 0 130px; padding: 6px; margin: 0; box-shadow: var(--shadow-sm); }
+.install-others { margin: 10px 0; }
+.install-others summary { cursor: pointer; font-weight: 700; }
+.install-others h4 { margin: 10px 0 2px; font-family: var(--font-title); font-weight: 400; font-size: 1.1rem; letter-spacing: .04em; }
+.ok-box { background: #d9f7dc; border: 2px solid var(--ink); border-radius: 12px; padding: 6px 10px; font-weight: 700; }
 
 /* ---------- Machine à sous « Surprends-moi » ---------- */
 .slot { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; background: rgba(27,27,27,.5); animation: fade .2s; }

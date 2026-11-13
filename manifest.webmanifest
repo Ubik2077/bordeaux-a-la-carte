@@ -3,6 +3,7 @@
   "short_name": "Bdx à la carte",
   "description": "Bars et restaurants de Bordeaux : carte interactive pour la réception.",
   "lang": "fr",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
