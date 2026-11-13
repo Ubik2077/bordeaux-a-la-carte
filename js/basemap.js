@@ -97,11 +97,16 @@ export function drawBasemap(map, bm, tram) {
       }),
     }).addTo(map);
   }
-  // Monuments
+  // Monuments (nom traduit selon la langue)
   for (const lm of LANDMARKS) {
-    L.marker([lm.la, lm.lo], {
-      pane: 'labels', interactive: false, keyboard: false,
-      icon: L.divIcon({ className: 'lbl-landmark', iconSize: null, html: `<i>${lm.i}</i><span>${lm.n}</span>` }),
-    }).addTo(map);
+    landmarkMarkers.push([lm, L.marker([lm.la, lm.lo], {
+      pane: 'labels', interactive: false, keyboard: false, icon: landmarkIcon(lm, 'fr'),
+    }).addTo(map)]);
   }
+}
+
+const landmarkMarkers = [];
+const landmarkIcon = (lm, lang) => L.divIcon({ className: 'lbl-landmark', iconSize: null, html: `<i>${lm.i}</i><span>${lang === 'en' ? lm.en || lm.n : lm.n}</span>` });
+export function setLandmarkLang(lang) {
+  for (const [lm, m] of landmarkMarkers) m.setIcon(landmarkIcon(lm, lang));
 }

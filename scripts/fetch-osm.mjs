@@ -410,8 +410,102 @@ async function hotelLookup() {
   return json.elements.map((e) => ({ name: e.tags.name, la: e.lat ?? e.center?.lat, lo: e.lon ?? e.center?.lon, addr: `${e.tags['addr:housenumber'] || ''} ${e.tags['addr:street'] || ''}`.trim() }));
 }
 
+// ---------------------------------------------------------------- Réseau routier (itinéraires)
+// Graphe compact : nœuds = carrefours, arêtes = tronçons entre deux carrefours.
+// Chaque arête : [a, b, longueur (m), drapeaux, vitesse voiture (km/h), nb points de géométrie]
+// Drapeaux : 1 voiture dans le sens a→b, 2 voiture b→a, 4 piéton, 8 escaliers
+const GB = { s: 44.798, w: -0.632, n: 44.892, e: -0.512 };
+const CAR_KMH = {
+  motorway: 75, motorway_link: 45, trunk: 55, trunk_link: 40, primary: 30, primary_link: 25, secondary: 27, secondary_link: 22,
+  tertiary: 23, tertiary_link: 20, unclassified: 18, residential: 17, living_street: 8, service: 12,
+};
+const FOOT_ONLY = new Set(['pedestrian', 'footway', 'path', 'steps', 'cycleway', 'track', 'bridleway', 'corridor']);
+
+async function graph() {
+  const q = `[out:json][timeout:240];
+  way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|pedestrian|footway|path|steps|cycleway|track|bridleway|corridor|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]
+     ["area"!="yes"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"]["footway"!~"^(sidewalk|crossing|traffic_island)$"]
+     ["access"!~"^(private|no)$"](${GB.s},${GB.w},${GB.n},${GB.e});
+  out body;
+  >;
+  out skel qt;`;
+  const json = await overpass('graph', q);
+  const coords = new Map();
+  const ways = [];
+  for (const el of json.elements) {
+    if (el.type === 'node') coords.set(el.id, [el.lat, el.lon]);
+    else if (el.type === 'way') ways.push(el);
+  }
+  // accès par voie
+  const info = [];
+  const use = new Map();
+  for (const w of ways) {
+    const t = w.tags || {}, hw = t.highway;
+    const carOk = !FOOT_ONLY.has(hw) && !/^(no|private)$/.test(t.motor_vehicle || t.motorcar || t.vehicle || '') &&
+      !(/^(no)$/.test(t.access || '') && /yes|designated/.test((t.psv || '') + (t.bus || '')));
+    let fwd = carOk, back = carOk;
+    const ow = t.oneway || ((t.junction === 'roundabout' || t.junction === 'circular' || /^motorway/.test(hw)) ? 'yes' : 'no');
+    if (/^(yes|true|1)$/.test(ow)) back = false;
+    else if (ow === '-1') { fwd = false; }
+    const footOk = !/^motorway/.test(hw) && !(hw.startsWith('trunk') && t.foot === 'no' && t.sidewalk !== 'separate');
+    let kmh = CAR_KMH[hw] || 15;
+    const ms = parseInt(t.maxspeed, 10);
+    if (ms) kmh = Math.min(kmh, Math.round(ms * 0.65));
+    const flags = (fwd ? 1 : 0) | (back ? 2 : 0) | (footOk ? 4 : 0) | (hw === 'steps' ? 8 : 0);
+    if (!(flags & 7)) continue;
+    info.push({ w, flags, kmh });
+    w.nodes.forEach((id, i) => use.set(id, (use.get(id) || 0) + (i === 0 || i === w.nodes.length - 1 ? 2 : 1)));
+  }
+  const idx = new Map(); const nodes = [];
+  const nodeIndex = (id) => { if (!idx.has(id)) { idx.set(id, nodes.length / 2); const [la, lo] = coords.get(id); nodes.push(Math.round(la * 1e5), Math.round(lo * 1e5)); } return idx.get(id); };
+  const edges = [], geom = [];
+  const R = 6371000, toRad = Math.PI / 180;
+  const hav = (a, b) => { const dLa = (b[0] - a[0]) * toRad, dLo = (b[1] - a[1]) * toRad; const s = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * toRad) * Math.cos(b[0] * toRad) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(s)); };
+  for (const { w, flags, kmh } of info) {
+    const ids = w.nodes.filter((id) => coords.has(id));
+    let start = 0;
+    for (let i = 1; i < ids.length; i++) {
+      if (i === ids.length - 1 || use.get(ids[i]) > 1) {
+        const seg = ids.slice(start, i + 1).map((id) => coords.get(id));
+        let len = 0; for (let k = 1; k < seg.length; k++) len += hav(seg[k - 1], seg[k]);
+        const inner = simplify(seg, 0.00003).slice(1, -1);
+        edges.push(nodeIndex(ids[start]), nodeIndex(ids[i]), Math.max(1, Math.round(len)), flags, kmh, inner.length);
+        for (const p of inner) geom.push(Math.round(p[0] * 1e5), Math.round(p[1] * 1e5));
+        start = i;
+      }
+    }
+  }
+  // coordonnées relatives à une origine pour des nombres plus courts
+  const base = [Math.round(GB.s * 1e5), Math.round(GB.w * 1e5)];
+  for (let i = 0; i < nodes.length; i += 2) { nodes[i] -= base[0]; nodes[i + 1] -= base[1]; }
+  for (let i = 0; i < geom.length; i += 2) { geom[i] -= base[0]; geom[i + 1] -= base[1]; }
+  return { base, n: nodes, e: edges, g: geom };
+}
+
+async function parkings() {
+  const q = `[out:json][timeout:90];
+  nwr["amenity"="parking"]["parking"~"^(underground|multi-storey)$"]["access"!~"^(private|customers|no)$"](${GB.s},${GB.w},${GB.n},${GB.e});
+  out center tags;`;
+  const json = await overpass('parkings', q);
+  return json.elements.map((e) => {
+    const t = e.tags || {};
+    return { n: t.name || 'Parking', la: r5(e.lat ?? e.center.lat), lo: r5(e.lon ?? e.center.lon), cap: +t.capacity || null, h: t.opening_hours || null };
+  }).filter((p) => (p.n !== 'Parking' || p.cap > 100) && !/^(accès|acces|entrée|sortie)/i.test(p.n) && !/(dépose|clinique)/i.test(p.n))
+    .map((p) => ({ ...p, n: p.n.replace(/^Parking\s+/i, '') }));
+}
+
 await mkdir(RAW, { recursive: true });
 await mkdir(OUT, { recursive: true });
+
+if (process.argv.includes('--graph-only')) {
+  const g = await graph();
+  await writeFile(path.join(OUT, 'graph.json'), JSON.stringify(g));
+  console.log(`✔ réseau routier : ${g.n.length / 2} carrefours, ${g.e.length / 6} tronçons`);
+  const pk = await parkings();
+  await writeFile(path.join(OUT, 'parkings.json'), JSON.stringify(pk));
+  console.log(`✔ ${pk.length} parkings`);
+  process.exit(0);
+}
 
 const h = await hotelLookup();
 console.log('Hôtels Ibis trouvés :', h);
@@ -424,3 +518,9 @@ console.log(`✔ ${t.lines.length} lignes de tram, ${t.stops.length} arrêts`);
 const bm = await basemap();
 await writeFile(path.join(OUT, 'basemap.json'), JSON.stringify(bm));
 console.log('✔ fond de carte', Object.fromEntries(Object.entries(bm).map(([k, x]) => [k, Array.isArray(x) ? x.length : typeof x === 'object' ? Object.values(x).map((a) => a.length || 0).join('/') : x])));
+const g = await graph();
+await writeFile(path.join(OUT, 'graph.json'), JSON.stringify(g));
+console.log(`✔ réseau routier : ${g.n.length / 2} carrefours, ${g.e.length / 6} tronçons`);
+const pk = await parkings();
+await writeFile(path.join(OUT, 'parkings.json'), JSON.stringify(pk));
+console.log(`✔ ${pk.length} parkings`);

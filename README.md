@@ -6,7 +6,8 @@ Carte interactive style BD des **bars et restaurants de Bordeaux**, pensée pour
 - 1 792 lieux (restaurants, snacks, bars, bars à vin, pubs, boîtes de nuit, cafés), issus d'OpenStreetMap
 - Voyant **🟢 ouvert / 🟠 ferme bientôt / 🔴 fermé / ⚪ inconnu**, mis à jour chaque minute
 - Bouton **🕒 Statut** : voir qui sera ouvert *ce midi*, *à 20h*, *à 23h* ou à une date précise
-- **Trajets depuis l'hôtel** : à pied, tram TBM (avec lignes et correspondances), vélo, taxi, avec durée, prix et badges « le plus rapide » / « le plus économique »
+- **Vrais itinéraires depuis l'hôtel**, calculés hors ligne sur le réseau de rues (sens uniques et rues piétonnes respectés) : à pied, tram TBM (lignes et correspondances), vélo, taxi et **voiture** (jusqu'au parking public le plus proche du lieu, puis à pied), avec durée, prix et badges « le plus rapide » / « le plus économique »
+- **Version anglaise** : bouton 🌐 EN / FR, toute l'app est traduite (fiches, horaires, trajets, QR code, monuments)
 - **QR code** : le client scanne et repart avec l'itinéraire Google Maps sur son téléphone
 - **🎲 Surprends-moi !** : tirage au sort parmi les résultats
 - **Notes de l'équipe** : étoiles, coups de cœur ❤️, prix corrigé, commentaire, masquer un lieu
@@ -84,7 +85,9 @@ sur OpenStreetMap (lien en bas de chaque fiche) : tout le monde en profite.
 Dans [js/config.js](js/config.js) :
 - `HOTEL` : point de départ des trajets
 - `CLOSING_SOON_MIN` : minutes avant la fermeture où le voyant passe à l'orange (60 par défaut)
-- `TRAVEL` / `PRICES` : vitesses et tarifs utilisés pour les estimations (ticket TBM, taxi…)
+- `TRAVEL` / `PRICES` : vitesses et tarifs utilisés pour les estimations (ticket TBM, taxi, parking…)
+
+Les textes français et anglais sont dans [js/i18n.js](js/i18n.js).
 - `TYPES`, `CUISINES` : libellés, couleurs et icônes
 
 ## 🧪 Tester en local
@@ -97,7 +100,7 @@ Puis ouvrez <http://localhost:8642>.
 
 ## ⚠️ Limites à connaître
 
-- Les **durées de trajet** sont des estimations (distance × détour, vitesse moyenne, attente du tram).
+- Les **durées de trajet** sont des estimations : les chemins suivent les vraies rues, mais les vitesses sont des moyennes (pas de trafic en temps réel, attente moyenne du tram).
   Pour le temps réel, utilisez le bouton Google Maps ou le QR code.
 - Les **horaires** viennent d'OpenStreetMap : environ la moitié des lieux les renseignent, et ils peuvent être
   anciens. Les horaires saisonniers sont signalés « approximatifs ».
@@ -113,9 +116,11 @@ css/app.css                                style BD
 js/app.js                                  carte, filtres, fiches, QR, tirage au sort
 js/basemap.js                              dessin du plan (Garonne, rues, parcs, tram)
 js/hours.js                                lecture des horaires OSM, statut ouvert/fermé
-js/routing.js                              estimation des trajets (marche, tram, vélo, taxi)
+js/routing.js                              trajets (marche, tram, vélo, taxi, voiture + parking)
+js/graph.js                                moteur d'itinéraires hors ligne sur le réseau de rues
+js/i18n.js                                 traductions français / anglais
 js/config.js                               réglages
-data/                                      lieux, plan, tram, crédits photos, notes d'équipe
+data/                                      lieux, plan, tram, réseau routier, parkings, crédits photos, notes d'équipe
 scripts/fetch-osm.mjs                      mise à jour des données OpenStreetMap
 vendor/, fonts/, img/                      Leaflet, polices BD, icônes et photos
 ```

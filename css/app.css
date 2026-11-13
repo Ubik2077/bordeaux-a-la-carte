@@ -93,7 +93,9 @@ a { color: inherit; }
   margin: 0; font-family: var(--font-title); font-weight: 400; font-size: 1.9rem; line-height: .95;
   letter-spacing: .03em; text-shadow: 2px 2px 0 var(--yellow), 3px 3px 0 var(--ink);
 }
-.brand h1 span { color: var(--red); display: inline-block; transform: rotate(-3deg); }
+.brand h1 .brand__b { color: var(--red); display: inline-block; transform: rotate(-3deg); }
+.brand__btns { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+#langBtn { font-size: .85rem; }
 .brand__sub { margin: 4px 0 0; font-size: .85rem; color: var(--muted); }
 .brand__text { flex: 1; min-width: 0; }
 
@@ -322,6 +324,13 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
 .route-walk { stroke-dasharray: 2 12; animation: dash 0.8s linear infinite; }
 .route-bike { stroke-dasharray: 10 8; animation: dash 0.6s linear infinite; }
 .route-taxi { stroke-dasharray: 14 8; animation: dash 0.5s linear infinite; }
+.route-car { stroke-dasharray: 16 6; animation: dash 0.5s linear infinite; }
+.park-pin { background: none; border: 0; }
+.park-pin b {
+  position: absolute; left: -15px; top: -15px; width: 30px; height: 30px; display: grid; place-items: center;
+  background: #2b6cff; color: #fff; font-family: var(--font-title); font-size: 20px; font-weight: 400;
+  border: 3px solid var(--ink); border-radius: 8px; box-shadow: 2px 2px 0 var(--ink); animation: bubbleIn .4s var(--boing);
+}
 .traveler { background: none; border: 0; }
 .traveler span { display: block; font-size: 26px; transform: translate(-50%, -60%); filter: drop-shadow(2px 2px 0 #fff) drop-shadow(-1px -1px 0 #fff); animation: hop .6s ease-in-out infinite; }
 
@@ -534,6 +543,11 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- Écrans moyens : la fiche recouvre la liste pour laisser la carte visible ---------- */
+@media (min-width: 821px) and (max-width: 1279px) {
+  .detail { left: 0; right: auto; width: var(--panel-w); border-left: 0; border-right: var(--border); box-shadow: 6px 0 0 rgba(0,0,0,.15); transform: translateX(-105%); }
 }
 
 /* ---------- Mobile : panneau en « bottom sheet » ---------- */

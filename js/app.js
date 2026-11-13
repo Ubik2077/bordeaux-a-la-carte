@@ -1,8 +1,9 @@
 // Bordeaux à la carte — application principale
-import { HOTEL, TYPES, TYPE_FILTERS, DEFAULT_TYPES, CUISINES, PRICE_LABELS, PRICE_HINT } from './config.js';
-import { hoursStatus, weekTable, parseHours, DAY_NAMES } from './hours.js';
-import { initTram, travelOptions, walkInfo, gmapsUrl, fmtMin } from './routing.js';
-import { drawBasemap } from './basemap.js';
+import { HOTEL, TYPES, TYPE_FILTERS, DEFAULT_TYPES, CUISINES } from './config.js';
+import { hoursStatus, weekTable, parseHours } from './hours.js';
+import { initRouting, travelOptions, walkInfo, gmapsUrl, fmtMin } from './routing.js';
+import { drawBasemap, setLandmarkLang } from './basemap.js';
+import { t, getLang, setLang, applyStatic, fmtMoney, fmtDist, fmtDate } from './i18n.js';
 
 const L = window.L;
 const $ = (s, el = document) => el.querySelector(s);
@@ -29,7 +30,7 @@ function setStaff(id, patch) {
 }
 const priceOf = (v) => staff(v.id).price || v.p;
 const typeKey = (v) => (v.t === 'cocktail' ? 'bar' : v.t);
-const emojiOf = (v) => (v.c && v.c !== 'autre' && CUISINES[v.c] && v.t !== 'cafe' && v.t !== 'bar' ? CUISINES[v.c].icon : TYPES[v.t].icon);
+const emojiOf = (v) => (v.c && v.c !== 'autre' && CUISINES[v.c] && v.t !== 'cafe' && v.t !== 'bar' ? CUISINES[v.c] : TYPES[v.t].icon);
 
 // ------------------------------------------------------------------ État
 const FILTER_KEY = 'cb.filtres.v1';
@@ -49,35 +50,37 @@ const saveFilters = () => store.set(FILTER_KEY, {
   types: [...state.types], cuisines: [...state.cuisines], prices: [...state.prices], toggles: [...state.toggles], walkMax: state.walkMax, sort: state.sort,
 });
 
-let venues = [], byId = new Map(), photos = {}, dataDate = '';
-let map, cluster, routeLayer, traveler, travelerRAF;
+let venues = [], byId = new Map(), photos = {}, dataDate = '', nbParkings = 0;
+let map, cluster, routeLayer, traveler, travelerRAF, hotelMarker;
 let filtered = [];
 let selected = null;
 let listLimit = 60;
 
 // ------------------------------------------------------------------ Démarrage
+applyStatic();
 init().catch((e) => {
   console.error(e);
-  $('#loader .loader__burst').textContent = 'OUPS ! Erreur de chargement';
+  $('#loader .loader__burst').textContent = t('loadError');
 });
 
 async function init() {
   const get = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u); return r.json(); });
-  const [vj, bm, tram, ph, eq] = await Promise.all([
+  const [vj, bm, tram, ph, eq, graph, parkings] = await Promise.all([
     get('data/venues.json'), get('data/basemap.json'), get('data/tram.json'), get('data/photos.json'),
-    get('data/equipe.json').catch(() => ({})),
+    get('data/equipe.json').catch(() => ({})), get('data/graph.json'), get('data/parkings.json'),
   ]);
   photos = ph;
   staffShared = eq.lieux || eq || {};
   dataDate = vj.updated;
-  initTram(tram);
+  nbParkings = parkings.length;
+  initRouting({ graph, tram, parkings });
 
   venues = vj.venues;
   for (const v of venues) {
     v.walk = walkInfo(v);
-    v.search = norm(`${v.n} ${TYPES[v.t].label} ${v.c ? CUISINES[v.c]?.label : ''} ${v.cr || ''} ${v.a || ''}`);
     byId.set(v.id, v);
   }
+  buildSearchIndex();
 
   map = L.map('map', {
     zoomControl: false, minZoom: 13, maxZoom: 19, zoomSnap: 1, wheelPxPerZoomLevel: 90,
@@ -85,14 +88,13 @@ async function init() {
     attributionControl: true,
   }).setView([44.8355, -0.5665], 14);
   map.attributionControl.setPrefix(false).addAttribution('© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>');
-  L.control.zoom({ position: 'bottomright', zoomInTitle: 'Zoomer', zoomOutTitle: 'Dézoomer' }).addTo(map);
+  L.control.zoom({ position: 'bottomright', zoomInTitle: t('zoomIn'), zoomOutTitle: t('zoomOut') }).addTo(map);
   drawBasemap(map, bm, tram);
+  setLandmarkLang(getLang());
 
   // Hôtel
-  L.marker([HOTEL.la, HOTEL.lo], {
-    zIndexOffset: 5000, keyboard: false,
-    icon: L.divIcon({ className: 'hotel-pin', iconSize: [0, 0], html: '<div class="h">🏨</div><div class="bubble">Vous êtes ici !</div>' }),
-  }).addTo(map).bindTooltip(`${HOTEL.name}<br>${HOTEL.addr}`, { direction: 'bottom', offset: [0, 8] });
+  hotelMarker = L.marker([HOTEL.la, HOTEL.lo], { zIndexOffset: 5000, keyboard: false, icon: hotelIcon() })
+    .addTo(map).bindTooltip(`${HOTEL.name}<br>${HOTEL.addr}`, { direction: 'bottom', offset: [0, 8] });
 
   routeLayer = L.layerGroup().addTo(map);
 
@@ -109,7 +111,7 @@ async function init() {
     if (!canHover) return;
     const kids = e.layer.getAllChildMarkers();
     const open = kids.filter((m) => /open|closing/.test(m.venue.status.state)).length;
-    e.layer.bindTooltip(`<b>${kids.length} lieux</b> · ${open} ouverts<br><small>Cliquez pour zoomer</small>`, { direction: 'top', offset: [0, -18], className: 'cl-tip' }).openTooltip();
+    e.layer.bindTooltip(t('cluster', { n: kids.length, o: open }), { direction: 'top', offset: [0, -18], className: 'cl-tip' }).openTooltip();
   });
 
   computeStatuses();
@@ -120,11 +122,42 @@ async function init() {
   applyFilters();
 
   // Mise à jour des voyants chaque minute
-  setInterval(() => { if (state.when === 'now') { refreshStatuses(); } }, 60_000);
+  setInterval(() => { if (state.when === 'now') refreshStatuses(); }, 60_000);
 
   $('#app').classList.remove('is-loading');
   registerSW();
-  setTimeout(() => toast(`${venues.length} lieux chargés · données OSM du ${frDate(dataDate)}`), 600);
+  setTimeout(() => toast(t('toast.loaded', { n: venues.length, d: fmtDate(dataDate) })), 600);
+}
+
+const hotelIcon = () => L.divIcon({ className: 'hotel-pin', iconSize: [0, 0], html: `<div class="h">🏨</div><div class="bubble">${t('hotel.bubble')}</div>` });
+
+// Recherche : on indexe les libellés dans les deux langues
+function buildSearchIndex() {
+  const lang = getLang();
+  const labels = (v) => {
+    const out = [];
+    for (const l of ['fr', 'en']) {
+      setLang(l);
+      out.push(t('type.' + v.t), v.c ? t('cui.' + v.c) : '');
+    }
+    return out.join(' ');
+  };
+  for (const v of venues) v.search = norm(`${v.n} ${labels(v)} ${v.cr || ''} ${v.a || ''}`);
+  setLang(lang);
+}
+
+// ------------------------------------------------------------------ Langue
+function switchLang() {
+  setLang(getLang() === 'fr' ? 'en' : 'fr');
+  applyStatic();
+  buildWalkOptions();
+  buildFilterUI();
+  setLandmarkLang(getLang());
+  hotelMarker.setIcon(hotelIcon());
+  $('#hoverCard').hidden = true;
+  closeModal();
+  refreshStatuses();
+  toast(t('toast.lang'));
 }
 
 // ------------------------------------------------------------------ Statuts
@@ -151,7 +184,7 @@ function refreshStatuses() {
   else {
     const d = statusDate();
     b.hidden = false;
-    b.textContent = `🕒 Statuts affichés pour ${DAY_NAMES[(d.getDay() + 6) % 7]} ${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}`;
+    b.textContent = t('banner', { d: t('days')[(d.getDay() + 6) % 7], t: getLang() === 'en' ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}` });
   }
 }
 
@@ -202,7 +235,7 @@ function showHover(v) {
   const s = staff(v.id);
   const ph = photoOf(v);
   const tr = travelOptions(v);
-  const quick = tr.opts.filter((o) => o.mode !== 'taxi' || tr.opts.length <= 2).slice(0, 3)
+  const quick = tr.opts.filter((o) => o.mode === 'walk' || o.mode === 'tram' || o.mode === 'bike').slice(0, 3)
     .map((o) => `<span>${o.icon} ${fmtMin(o.min)}</span>`).join('');
   card.style.setProperty('--c', T.color);
   card.innerHTML = `
@@ -212,11 +245,10 @@ function showHover(v) {
       <div class="hc__row">${priceHtml(priceOf(v))}<span class="sep">|</span>${starsHtml(s.stars)}</div>
       <div class="hc__row st--${v.status.state}"><i class="light light--${v.status.state}"></i>${esc(v.status.text)}</div>
       <div class="hc__travel">${quick}</div>
-      <div class="hc__hint">Cliquez pour la fiche complète ➜</div>
+      <div class="hc__hint">${t('hover.hint')}</div>
     </div>`;
   card.hidden = false;
   card.classList.remove('below');
-  // repositionnement
   card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
   const p = map.latLngToContainerPoint([v.la, v.lo]);
   const wrap = $('#mapWrap').getBoundingClientRect();
@@ -241,12 +273,12 @@ function passes(v, ignoreType = false) {
   if (state.cuisines.size && !state.cuisines.has(v.c)) return false;
   if (state.prices.size && !state.prices.has(priceOf(v))) return false;
   if (state.walkMax && v.walk.min > state.walkMax) return false;
-  const t = state.toggles;
-  if (t.has('open') && !/open|closing/.test(v.status.state)) return false;
-  if (t.has('fav') && !s.fav) return false;
-  if (t.has('ts') && !v.ts) return false;
-  if (t.has('vg') && !v.vg && v.c !== 'vege') return false;
-  if (t.has('wc') && !v.wc) return false;
+  const tg = state.toggles;
+  if (tg.has('open') && !/open|closing/.test(v.status.state)) return false;
+  if (tg.has('fav') && !s.fav) return false;
+  if (tg.has('ts') && !v.ts) return false;
+  if (tg.has('vg') && !v.vg && v.c !== 'vege') return false;
+  if (tg.has('wc') && !v.wc) return false;
   if (state.q) {
     for (const tok of state.q.split(/\s+/)) if (tok && !v.search.includes(tok) && !norm(s.note).includes(tok)) return false;
   }
@@ -258,11 +290,10 @@ function applyFilters({ keepScroll = false } = {}) {
   sortList();
   cluster.clearLayers();
   cluster.addLayers(filtered.filter((v) => v !== selected).map((v) => v.marker));
-  // compteurs par type
   const counts = {};
   for (const v of venues) if (passes(v, true)) counts[typeKey(v)] = (counts[typeKey(v)] || 0) + 1;
   for (const b of $$('#typeChips .chip')) b.querySelector('.n').textContent = counts[b.dataset.type] || 0;
-  $('#count').textContent = filtered.length === 0 ? 'Aucun lieu' : `${filtered.length} lieu${filtered.length > 1 ? 'x' : ''}`;
+  $('#count').textContent = filtered.length === 0 ? t('count.0') : filtered.length === 1 ? t('count.1') : t('count.n', { n: filtered.length });
   if (!keepScroll) { listLimit = 60; $('#list').scrollTop = 0; }
   renderList(!keepScroll);
   saveFilters();
@@ -282,7 +313,7 @@ function sortList() {
 function renderList(animate = true) {
   const ul = $('#list');
   if (!filtered.length) {
-    ul.innerHTML = `<li class="empty"><b>Zut !</b>Aucun lieu ne correspond.<br>Essayez d'enlever un filtre.</li>`;
+    ul.innerHTML = `<li class="empty">${t('empty')}</li>`;
     return;
   }
   const items = filtered.slice(0, listLimit).map((v, i) => {
@@ -298,33 +329,38 @@ function renderList(animate = true) {
       <div class="item__side">${priceHtml(priceOf(v))}<span>🚶 ${fmtMin(v.walk.min)}</span>${s.stars ? starsHtml(s.stars) : ''}</div>
     </li>`;
   });
-  if (filtered.length > listLimit) items.push(`<li><button class="btn btn--small more" id="moreBtn">Voir plus (${filtered.length - listLimit} restants)</button></li>`);
+  if (filtered.length > listLimit) items.push(`<li><button class="btn btn--small more" id="moreBtn">${t('more', { n: filtered.length - listLimit })}</button></li>`);
   ul.innerHTML = items.join('');
 }
 
 function typeLabel(v) {
-  const T = TYPES[v.t];
-  if ((v.t === 'restaurant' || v.t === 'fastfood') && v.c && v.c !== 'autre') return `${T.label} · ${CUISINES[v.c].label}`;
-  return T.label;
+  const base = t('type.' + v.t);
+  if ((v.t === 'restaurant' || v.t === 'fastfood') && v.c && v.c !== 'autre') return `${base} · ${t('cui.' + v.c)}`;
+  return base;
 }
-function priceHtml(p) { return `<span class="price" title="${PRICE_LABELS[p]} (${PRICE_HINT[p]})">${'€'.repeat(p)}<em>${'€'.repeat(3 - p)}</em></span>`; }
-function starsHtml(n) { return n ? `<span class="stars" title="Note de l'équipe : ${n}/5">${'★'.repeat(n)}<em>${'★'.repeat(5 - n)}</em></span>` : '<span class="stars" title="Pas encore noté"><em>★★★★★</em></span>'; }
+function priceHtml(p) { return `<span class="price" title="${t('price.' + p)} (${t('priceHint.' + p)})">${'€'.repeat(p)}<em>${'€'.repeat(3 - p)}</em></span>`; }
+function starsHtml(n) { return n ? `<span class="stars" title="${t('stars.title', { n })}">${'★'.repeat(n)}<em>${'★'.repeat(5 - n)}</em></span>` : `<span class="stars" title="${t('stars.none')}"><em>★★★★★</em></span>`; }
 function photoOf(v) {
   if (v.img && navigator.onLine) return { src: v.img, author: 'OpenStreetMap / Wikimedia', license: '', page: v.img, own: true };
   return photos[v.c] || photos[v.t === 'cocktail' ? 'bar' : v.t] || photos.autre;
 }
 
 // ------------------------------------------------------------------ Interface filtres
+function buildWalkOptions() {
+  const cur = String(state.walkMax);
+  $('#walkMax').innerHTML = [0, 10, 15, 20, 30].map((n) =>
+    `<option value="${n}">${n === 0 ? t('walk.0') : n === 10 ? t('walk.10') : t('walk.n', { n })}</option>`).join('');
+  $('#walkMax').value = cur;
+}
 function buildFilterUI() {
-  $('#typeChips').innerHTML = TYPE_FILTERS.map((k) => {
-    const T = TYPES[k];
-    return `<button class="chip${state.types.has(k) ? ' on' : ''}" data-type="${k}" style="--c:${T.color}">${T.icon} ${T.plural} <span class="n"></span></button>`;
-  }).join('');
-  $('#cuisineChips').innerHTML = Object.entries(CUISINES).map(([k, c]) =>
-    `<button class="chip${state.cuisines.has(k) ? ' on' : ''}" data-cuisine="${k}">${c.icon} ${c.label}</button>`).join('');
+  $('#typeChips').innerHTML = TYPE_FILTERS.map((k) =>
+    `<button class="chip${state.types.has(k) ? ' on' : ''}" data-type="${k}" style="--c:${TYPES[k].color}">${TYPES[k].icon} ${t('types.' + k)} <span class="n"></span></button>`).join('');
+  $('#cuisineChips').innerHTML = Object.entries(CUISINES).map(([k, icon]) =>
+    `<button class="chip${state.cuisines.has(k) ? ' on' : ''}" data-cuisine="${k}">${icon} ${t('cui.' + k)}</button>`).join('');
   updateCuisineVisibility();
   for (const b of $$('#priceSeg button')) b.classList.toggle('on', state.prices.has(+b.dataset.p));
   for (const b of $$('#toggleChips button')) b.classList.toggle('on', state.toggles.has(b.dataset.t));
+  if (!$('#walkMax').options.length) buildWalkOptions();
   $('#walkMax').value = String(state.walkMax);
   $('#sort').value = state.sort;
 }
@@ -335,6 +371,7 @@ const toggleSet = (set, k) => (set.has(k) ? set.delete(k) : set.add(k));
 const pop = (el) => { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); };
 
 function bindUI() {
+  $('#langBtn').addEventListener('click', switchLang);
   $('#typeChips').addEventListener('click', (e) => {
     const b = e.target.closest('.chip'); if (!b) return;
     toggleSet(state.types, b.dataset.type);
@@ -346,7 +383,7 @@ function bindUI() {
     const b = e.target.closest('.chip'); if (!b) return;
     state.types = new Set([b.dataset.type]);
     buildFilterUI(); applyFilters();
-    toast(`Uniquement : ${TYPES[b.dataset.type].plural}`);
+    toast(t('toast.only', { x: t('types.' + b.dataset.type) }));
   });
   $('#cuisineChips').addEventListener('click', (e) => {
     const b = e.target.closest('.chip'); if (!b) return;
@@ -369,7 +406,7 @@ function bindUI() {
   $('#resetBtn').addEventListener('click', () => {
     state.types = new Set(DEFAULT_TYPES); state.cuisines.clear(); state.prices.clear(); state.toggles.clear();
     state.walkMax = 0; state.q = ''; $('#q').value = ''; $('#clearQ').hidden = true;
-    buildFilterUI(); applyFilters(); toast('Filtres réinitialisés');
+    buildFilterUI(); applyFilters(); toast(t('toast.reset'));
   });
 
   let qTimer;
@@ -381,7 +418,6 @@ function bindUI() {
   $('#q').addEventListener('focus', () => { if (isMobile()) $('#panel').classList.add('expanded'); });
   $('#clearQ').addEventListener('click', () => { $('#q').value = ''; state.q = ''; $('#clearQ').hidden = true; applyFilters(); $('#q').focus(); });
 
-  // Moment pour le statut
   $('#when').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     state.when = b.dataset.when;
@@ -397,13 +433,11 @@ function bindUI() {
     refreshStatuses();
   });
 
-  // Liste
   const list = $('#list');
   list.addEventListener('click', (e) => {
     if (e.target.id === 'moreBtn') { listLimit += 80; renderList(false); return; }
     const li = e.target.closest('.item'); if (!li) return;
-    const v = byId.get(li.dataset.id);
-    openDetail(v);
+    openDetail(byId.get(li.dataset.id));
   });
   list.addEventListener('scroll', () => {
     if (list.scrollTop + list.clientHeight > list.scrollHeight - 200 && filtered.length > listLimit) { listLimit += 80; renderList(false); }
@@ -434,8 +468,8 @@ function bindUI() {
   });
   $('#modal').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeModal(); });
 
-  window.addEventListener('online', () => toast('De retour en ligne 🌐'));
-  window.addEventListener('offline', () => toast('Hors ligne : la carte fonctionne toujours ✔'));
+  window.addEventListener('online', () => toast(t('toast.online')));
+  window.addEventListener('offline', () => toast(t('toast.offline')));
 }
 
 // ------------------------------------------------------------------ Fiche détaillée
@@ -474,82 +508,96 @@ function closeDetail() {
   $$('#list .item.selected').forEach((li) => li.classList.remove('selected'));
 }
 
+// Textes d'une option de trajet
+function modeDetail(o) {
+  switch (o.mode) {
+    case 'walk': return t('t.walk', { d: fmtDist(o.m) });
+    case 'tram': return t('t.tram', { a: Math.round(o.walkStart), b: Math.round(o.walkEnd) });
+    case 'bike': return t('t.bike', { d: fmtDist(o.m) });
+    case 'taxi': return t('t.taxi', { d: fmtDist(o.m) });
+    case 'car': return o.parking ? t('t.carPark', { p: esc(o.parking), m: Math.max(1, Math.round(o.walkEnd)) }) : t('t.carStreet');
+    default: return '';
+  }
+}
+const modeCost = (o) => (o.mode === 'car' ? t('perHour', { x: fmtMoney(o.perHour).replace('≈ ', '') }) : fmtMoney(o.cost));
+
 function renderDetail(v, { keepRoute = false } = {}) {
   const T = TYPES[v.t];
   const s = staff(v.id);
   const ph = photoOf(v);
-  const tr = travelOptions(v);
+  const tr = travelOptions(v, { paths: true });
   const current = keepRoute && $('#detail .tcard.on')?.dataset.mode;
-  const def = current || (tr.opts.find((o) => o.mode === 'tram' && o.min < tr.opts[0].min - 5) || tr.opts[0]).mode;
+  const def = (current && tr.opts.find((o) => o.mode === current)?.mode) || (tr.opts.find((o) => o.mode === 'tram' && o.min < tr.opts[0].min - 5) || tr.opts[0]).mode;
   const week = weekTable(v.h);
   const today = (statusDate().getDay() + 6) % 7;
   const parsed = parseHours(v.h);
   const p = priceOf(v);
+  const osmUrl = `https://www.openstreetmap.org/${{ n: 'node', w: 'way', r: 'relation' }[v.id[0]]}/${v.id.slice(1)}`;
 
   $('#detail').innerHTML = `
-    <div class="detail__bar"><button class="btn btn--round detail__close" id="closeDetail" title="Fermer (Échap)">✕</button></div>
+    <div class="detail__bar"><button class="btn btn--round detail__close" id="closeDetail" title="${t('d.close')}">✕</button></div>
     <div class="detail__photo" style="--c:${T.color};background-image:url('${esc(ph.src)}')">
-      <a class="credit" href="${esc(ph.page)}" target="_blank" rel="noopener">📷 ${ph.own ? 'Photo du lieu' : 'Photo d’illustration'} · ${esc(ph.author)}${ph.license ? ' · ' + esc(ph.license) : ''}</a>
+      <a class="credit" href="${esc(ph.page)}" target="_blank" rel="noopener">📷 ${ph.own ? t('d.photoOwn') : t('d.photoIllu')} · ${esc(ph.author)}${ph.license ? ' · ' + esc(ph.license) : ''}</a>
       <div class="detail__tag"><span class="burst-tag" style="--c:${T.color}">${emojiOf(v)} ${esc(typeLabel(v))}</span></div>
     </div>
     <div class="detail__body">
       <h2 class="detail__name">${esc(v.n)}</h2>
       <div class="detail__meta">
-        ${priceHtml(p)} <span><b>${PRICE_LABELS[p]}</b> · ${PRICE_HINT[p]}${s.price ? ' (corrigé par l’équipe)' : ' (estimé)'}</span>
+        ${priceHtml(p)} <span><b>${t('price.' + p)}</b> · ${t('priceHint.' + p)}${s.price ? t('d.priceStaff') : t('d.priceEst')}</span>
       </div>
-      <div class="status-pill s-${v.status.state}"><i class="light light--${v.status.state}"></i>${esc(v.status.text)}${v.status.approx ? ' <small>(horaires approximatifs)</small>' : ''}</div>
+      <div class="status-pill s-${v.status.state}"><i class="light light--${v.status.state}"></i>${esc(v.status.text)}${v.status.approx ? ` <small>${t('d.approx')}</small>` : ''}</div>
       <div class="rate-row">
-        <span class="star-input" id="starInput" title="Note de l'équipe">${[1, 2, 3, 4, 5].map((i) => `<button data-s="${i}" class="${i <= (s.stars || 0) ? 'on' : ''}" aria-label="${i} étoile${i > 1 ? 's' : ''}">★</button>`).join('')}</span>
-        <button class="btn btn--small fav-btn${s.fav ? ' on' : ''}" id="favBtn"><span>❤</span> ${s.fav ? 'Coup de cœur !' : 'Coup de cœur ?'}</button>
+        <span class="star-input" id="starInput" title="${t('d.rateTitle')}">${[1, 2, 3, 4, 5].map((i) => `<button data-s="${i}" class="${i <= (s.stars || 0) ? 'on' : ''}" aria-label="${t('d.star', { n: i })}">★</button>`).join('')}</span>
+        <button class="btn btn--small fav-btn${s.fav ? ' on' : ''}" id="favBtn"><span>❤</span> ${s.fav ? t('d.favOn') : t('d.favOff')}</button>
       </div>
       ${s.note ? `<div class="tip" style="background:#fff3b0">${esc(s.note)}</div>` : ''}
 
-      <h3>🧭 Comment y aller ?</h3>
-      <div class="tip">${esc(tr.tip)}</div>
+      <h3>${t('d.go')}</h3>
+      <div class="tip">${t('tip.' + tr.tip)}</div>
       <div class="travel" id="travel">
         ${tr.opts.map((o) => `
           <button class="tcard${o.mode === def ? ' on' : ''}" data-mode="${o.mode}">
             <span class="tcard__icon">${o.icon}</span>
-            <span class="tcard__label">${o.label}</span>
+            <span class="tcard__label">${t('m.' + o.mode)}</span>
             <span class="tcard__time">${fmtMin(o.min)}</span>
-            <span class="tcard__sub">${esc(o.detail)}</span>
-            <span class="tcard__cost">${o.costLabel}</span>
-            ${o.legs ? `<span class="legs">${o.legs.map((l) => `<span><span class="line-pill" style="--c:${l.colour}">${l.line}</span> ${esc(l.from)} → ${esc(l.to)} <small>(${l.n} arrêt${l.n > 1 ? 's' : ''})</small></span>`).join('')}</span>` : ''}
-            ${o.fastest || o.cheapest ? `<span class="tcard__badges">${o.fastest ? '<span class="badge">⚡ Le plus rapide</span>' : ''}${o.cheapest ? '<span class="badge badge--cheap">💰 Le plus économique</span>' : ''}</span>` : ''}
+            <span class="tcard__sub">${modeDetail(o)}</span>
+            <span class="tcard__cost">${modeCost(o)}</span>
+            ${o.legs ? `<span class="legs">${o.legs.map((l) => `<span><span class="line-pill" style="--c:${l.colour}">${l.line}</span> ${esc(l.from)} → ${esc(l.to)} <small>(${t(l.n > 1 ? 't.stopN' : 't.stop1', { n: l.n })})</small></span>`).join('')}</span>` : ''}
+            ${o.fastest || o.cheapest ? `<span class="tcard__badges">${o.fastest ? `<span class="badge">${t('b.fast')}</span>` : ''}${o.cheapest ? `<span class="badge badge--cheap">${t('b.cheap')}</span>` : ''}</span>` : ''}
           </button>`).join('')}
       </div>
-      <p class="estim">Durées estimées depuis l’hôtel, hors attente exceptionnelle. Pour le temps réel : Google Maps.</p>
+      <p class="estim">${t('d.estim')}</p>
       <div class="actions">
-        <button class="btn btn--pop" id="qrBtn">📱 QR code pour le client</button>
-        <a class="btn" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def).gmode)}" target="_blank" rel="noopener">🗺️ Google Maps</a>
+        <button class="btn btn--pop" id="qrBtn">${t('d.qr')}</button>
+        <a class="btn" id="gmapsBtn" href="${gmapsUrl(v, tr.opts.find((o) => o.mode === def))}" target="_blank" rel="noopener">${t('d.gmaps')}</a>
       </div>
 
-      <h3>🕒 Horaires</h3>
+      <h3>${t('d.hours')}</h3>
       ${week ? `<table class="hours">${week.map((d, i) => `<tr class="${i === today ? 'today' : ''}${d.closed ? ' closed' : ''}"><td>${d.day}</td><td>${d.text}</td></tr>`).join('')}</table>
-        ${parsed?.approx ? '<p class="raw">⚠️ Horaires saisonniers ou complexes : à vérifier.</p>' : ''}
-        <p class="raw">Source OSM : ${esc(v.h)}</p>` : '<p>Horaires non renseignés. Appelez avant d’envoyer un client !</p>'}
+        ${parsed?.approx ? `<p class="raw">${t('d.hoursComplex')}</p>` : ''}
+        <p class="raw">${t('d.hoursSrc', { x: esc(v.h) })}</p>` : `<p>${t('d.hoursNone')}</p>`}
 
-      <h3>ℹ️ Infos</h3>
+      <h3>${t('d.info')}</h3>
       <ul class="infos">
-        ${v.a ? `<li>📍 <span>${esc(v.a)}, Bordeaux</span></li>` : ''}
+        ${v.a ? `<li>📍 <span>${t('d.city', { a: esc(v.a) })}</span></li>` : ''}
         ${v.ph ? `<li>📞 <a href="tel:${esc(v.ph.replace(/\s/g, ''))}">${esc(v.ph)}</a></li>` : ''}
         ${v.w ? `<li>🌐 <a href="${esc(/^https?:/.test(v.w) ? v.w : 'https://' + v.w)}" target="_blank" rel="noopener">${esc(v.w.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a></li>` : ''}
-        ${v.cr ? `<li>🍴 <span>Cuisine : ${esc(v.cr)}</span></li>` : ''}
+        ${v.cr ? `<li>🍴 <span>${t('d.cuisine', { x: esc(v.cr) })}</span></li>` : ''}
         ${v.d ? `<li>📝 <span>${esc(v.d)}</span></li>` : ''}
       </ul>
       <div class="tags">
-        ${v.ts ? '<span class="tag">☀️ Terrasse</span>' : ''}${v.vg ? '<span class="tag">🥗 Options végé</span>' : ''}${v.wc ? '<span class="tag">♿ Accessible</span>' : ''}${v.ta ? '<span class="tag">🥡 À emporter</span>' : ''}
+        ${v.ts ? `<span class="tag">${t('tag.ts')}</span>` : ''}${v.vg ? `<span class="tag">${t('tag.vg')}</span>` : ''}${v.wc ? `<span class="tag">${t('tag.wc')}</span>` : ''}${v.ta ? `<span class="tag">${t('tag.ta')}</span>` : ''}
       </div>
 
-      <h3>📝 Notes de l’équipe</h3>
+      <h3>${t('d.staff')}</h3>
       <div class="staff">
-        <label>Prix réel :
+        <label>${t('d.staffPrice')}
           <span class="seg" id="staffPrice">${[1, 2, 3].map((i) => `<button data-p="${i}" class="${s.price === i ? 'on' : ''}">${'€'.repeat(i)}</button>`).join('')}</span>
         </label>
-        <textarea id="staffNote" placeholder="Ex. : « Réserver le week-end », « Super accueil », « Demander Paul de notre part »…">${esc(s.note || '')}</textarea>
-        <label><input type="checkbox" id="staffHidden" ${s.hidden ? 'checked' : ''}> Masquer ce lieu (fermé définitivement, à éviter…)</label>
+        <textarea id="staffNote" placeholder="${esc(t('d.staffPh'))}">${esc(s.note || '')}</textarea>
+        <label><input type="checkbox" id="staffHidden" ${s.hidden ? 'checked' : ''}> ${t('d.staffHide')}</label>
       </div>
-      <p class="src">Données © contributeurs OpenStreetMap. Une info fausse ? <a href="https://www.openstreetmap.org/${{ n: 'node', w: 'way', r: 'relation' }[v.id[0]]}/${v.id.slice(1)}" target="_blank" rel="noopener">Voir / corriger sur OSM</a></p>
+      <p class="src">${t('d.src', { u: osmUrl })}</p>
     </div>`;
 
   $('#closeDetail').onclick = closeDetail;
@@ -557,21 +605,21 @@ function renderDetail(v, { keepRoute = false } = {}) {
     const b = e.target.closest('.tcard'); if (!b) return;
     $$('#travel .tcard').forEach((x) => x.classList.toggle('on', x === b));
     const o = tr.opts.find((x) => x.mode === b.dataset.mode);
-    $('#gmapsBtn').href = gmapsUrl(v, o.gmode);
+    $('#gmapsBtn').href = gmapsUrl(v, o);
     drawRoute(v, o, true);
   };
-  $('#qrBtn').onclick = () => openQR(v, $('#detail .tcard.on')?.dataset.mode || def);
+  $('#qrBtn').onclick = () => openQR(v, tr, $('#detail .tcard.on')?.dataset.mode || def);
   $('#starInput').onclick = (e) => {
     const b = e.target.closest('button'); if (!b) return;
     const n = +b.dataset.s;
     setStaff(v.id, { stars: staff(v.id).stars === n ? 0 : n });
     afterStaffChange(v);
-    toast(staff(v.id).stars ? `Noté ${n}/5 ⭐` : 'Note retirée');
+    toast(staff(v.id).stars ? t('toast.rated', { n }) : t('toast.unrated'));
   };
   $('#favBtn').onclick = () => {
     setStaff(v.id, { fav: !staff(v.id).fav });
     afterStaffChange(v);
-    toast(staff(v.id).fav ? 'Ajouté aux coups de cœur ❤️' : 'Retiré des coups de cœur');
+    toast(staff(v.id).fav ? t('toast.favOn') : t('toast.favOff'));
   };
   $('#staffPrice').onclick = (e) => {
     e.preventDefault();
@@ -588,7 +636,7 @@ function renderDetail(v, { keepRoute = false } = {}) {
   $('#staffHidden').onchange = (e) => {
     setStaff(v.id, { hidden: e.target.checked });
     applyFilters({ keepScroll: true });
-    toast(e.target.checked ? 'Lieu masqué (réglages pour tout réafficher)' : 'Lieu de nouveau visible');
+    toast(e.target.checked ? t('toast.hideOn') : t('toast.hideOff'));
   };
 
   if (!keepRoute) drawRoute(v, tr.opts.find((o) => o.mode === def), true);
@@ -602,6 +650,7 @@ function afterStaffChange(v) {
 
 // ------------------------------------------------------------------ Itinéraire sur la carte
 const svgRenderer = L.svg({ padding: 0.5 });
+const ROUTE_COLORS = { walk: '#1b1b1b', bike: '#1d8a2c', taxi: '#e0a100', car: '#2b6cff' };
 function clearRoute() {
   routeLayer.clearLayers();
   cancelAnimationFrame(travelerRAF);
@@ -616,15 +665,27 @@ function drawRoute(v, o, fit) {
       L.polyline(seg.pts, { renderer: svgRenderer, color: '#1b1b1b', weight: 11, opacity: 1, interactive: false }).addTo(routeLayer);
       L.polyline(seg.pts, { renderer: svgRenderer, color: seg.colour, weight: 6, opacity: 1, interactive: false }).addTo(routeLayer);
       for (const p of seg.pts) L.circleMarker(p, { renderer: svgRenderer, radius: 4, color: '#1b1b1b', weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(routeLayer);
+    } else if (seg.kind === 'car' || seg.kind === 'taxi') {
+      L.polyline(seg.pts, { renderer: svgRenderer, color: '#1b1b1b', weight: 10, opacity: 0.9, lineJoin: 'round', interactive: false }).addTo(routeLayer);
+      L.polyline(seg.pts, { renderer: svgRenderer, color: ROUTE_COLORS[seg.kind], weight: 6, lineJoin: 'round', lineCap: 'round', className: 'route-' + seg.kind, interactive: false }).addTo(routeLayer);
     } else {
-      const col = { walk: '#1b1b1b', bike: '#1d8a2c', taxi: '#e0a100' }[seg.kind];
-      L.polyline(seg.pts, { renderer: svgRenderer, color: '#fff', weight: 9, opacity: 0.9, interactive: false }).addTo(routeLayer);
-      L.polyline(seg.pts, { renderer: svgRenderer, color: col, weight: 5, lineCap: 'round', className: 'route-' + seg.kind, interactive: false }).addTo(routeLayer);
+      L.polyline(seg.pts, { renderer: svgRenderer, color: '#fff', weight: 9, opacity: 0.9, lineJoin: 'round', interactive: false }).addTo(routeLayer);
+      L.polyline(seg.pts, { renderer: svgRenderer, color: ROUTE_COLORS[seg.kind], weight: 5, lineCap: 'round', lineJoin: 'round', className: 'route-' + seg.kind, interactive: false }).addTo(routeLayer);
     }
   }
+  if (o.mode === 'car' && o.dest) {
+    L.marker(o.dest, { interactive: false, keyboard: false, icon: L.divIcon({ className: 'park-pin', iconSize: [0, 0], html: '<b>P</b>' }) }).addTo(routeLayer);
+  }
   if (fit) {
-    const pad = isMobile() ? [40, 70] : [60, 60];
-    const opts = { paddingTopLeft: pad, paddingBottomRight: isMobile() ? [40, window.innerHeight * 0.7] : [($('#detail').offsetWidth || 430) + 40, 60], maxZoom: 17, duration: 0.8 };
+    // marge pour ne pas cacher le trajet sous la fiche (à droite, à gauche ou en bas selon l'écran)
+    const dw = ($('#detail').offsetWidth || 430) + 40;
+    const leftDetail = !isMobile() && window.innerWidth < 1280;
+    const opts = isMobile()
+      ? { paddingTopLeft: [40, 70], paddingBottomRight: [40, window.innerHeight * 0.7] }
+      : leftDetail
+        ? { paddingTopLeft: [Math.max(60, dw - $('#panel').offsetWidth), 60], paddingBottomRight: [60, 60] }
+        : { paddingTopLeft: [60, 60], paddingBottomRight: [dw, 60] };
+    Object.assign(opts, { maxZoom: 17, duration: 0.8 });
     map.flyToBounds(L.latLngBounds(all), opts);
   }
   animateTraveler(o);
@@ -632,25 +693,25 @@ function drawRoute(v, o, fit) {
 
 // Petit personnage qui parcourt l'itinéraire, façon jeu vidéo
 function animateTraveler(o) {
+  const icons = { walk: '🚶', tram: '🚋', bike: '🚲', taxi: '🚕', car: '🚗' };
   const segs = [];
   for (const seg of o.path) {
-    const icon = seg.kind === 'tram' ? '🚋' : seg.kind === 'walk' ? '🚶' : o.icon;
-    for (let i = 1; i < seg.pts.length; i++) segs.push({ a: seg.pts[i - 1], b: seg.pts[i], icon });
+    for (let i = 1; i < seg.pts.length; i++) segs.push({ a: seg.pts[i - 1], b: seg.pts[i], icon: icons[seg.kind] || o.icon });
   }
   const lens = segs.map((s) => Math.hypot(s.b[0] - s.a[0], (s.b[1] - s.a[1]) * 0.71));
   const total = lens.reduce((a, b) => a + b, 0);
   if (!total) return;
   traveler = L.marker(segs[0].a, { interactive: false, keyboard: false, zIndexOffset: 4000, icon: L.divIcon({ className: 'traveler', iconSize: [0, 0], html: `<span>${segs[0].icon}</span>` }) }).addTo(map);
-  const dur = 5000;
+  const dur = 6000;
   let start = null, lastIcon = segs[0].icon;
-  const step = (t) => {
+  const step = (time) => {
     if (!traveler) return;
-    start ??= t;
-    let f = ((t - start) % (dur + 1200)) / dur;
+    start ??= time;
+    let f = ((time - start) % (dur + 1200)) / dur;
     if (f > 1) f = 1;
-    let dist = f * total, i = 0;
-    while (i < segs.length - 1 && dist > lens[i]) { dist -= lens[i]; i++; }
-    const s = segs[i], k = lens[i] ? Math.min(1, dist / lens[i]) : 1;
+    let d = f * total, i = 0;
+    while (i < segs.length - 1 && d > lens[i]) { d -= lens[i]; i++; }
+    const s = segs[i], k = lens[i] ? Math.min(1, d / lens[i]) : 1;
     traveler.setLatLng([s.a[0] + (s.b[0] - s.a[0]) * k, s.a[1] + (s.b[1] - s.a[1]) * k]);
     if (s.icon !== lastIcon) { lastIcon = s.icon; const el = traveler.getElement(); if (el) el.firstChild.textContent = s.icon; }
     travelerRAF = requestAnimationFrame(step);
@@ -659,27 +720,26 @@ function animateTraveler(o) {
 }
 
 // ------------------------------------------------------------------ QR code
-function openQR(v, mode) {
-  const tr = travelOptions(v);
-  const modes = tr.opts.map((o) => ({ mode: o.mode, label: `${o.icon} ${o.label}`, g: o.gmode, min: o.min }));
+function openQR(v, tr, mode) {
   const render = (m) => {
-    const o = modes.find((x) => x.mode === m) || modes[0];
-    const url = gmapsUrl(v, o.g);
+    const o = tr.opts.find((x) => x.mode === m) || tr.opts[0];
+    const url = gmapsUrl(v, o);
     const qr = window.qrcode(0, 'M');
     qr.addData(url); qr.make();
     $('#qrBox').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
     $$('.qr-modes button').forEach((b) => b.classList.toggle('on', b.dataset.m === o.mode));
     $('#qrLink').href = url;
-    $('#qrInfo').textContent = `${o.label} · environ ${fmtMin(o.min)} depuis l’hôtel`;
+    $('#qrInfo').textContent = t('qr.info', { m: `${o.icon} ${t('m.' + o.mode)}`, t: fmtMin(o.min) });
+    $('#qrPark').textContent = o.parking ? t('qr.park', { p: o.parking }) : '';
   };
   openModal(`
     <button class="btn btn--round x" data-close>✕</button>
     <h2>📱 ${esc(v.n)}</h2>
-    <p class="center">Le client scanne ce code avec l’appareil photo de son téléphone : l’itinéraire s’ouvre dans Google Maps.</p>
-    <div class="qr-modes">${modes.map((m) => `<button class="btn btn--small" data-m="${m.mode}">${m.label}</button>`).join('')}</div>
+    <p class="center">${t('qr.text')}</p>
+    <div class="qr-modes">${tr.opts.map((o) => `<button class="btn btn--small" data-m="${o.mode}">${o.icon} ${t('m.' + o.mode)}</button>`).join('')}</div>
     <div class="qr" id="qrBox"></div>
-    <p class="center"><b id="qrInfo"></b><br><small>${v.a ? esc(v.a) + ', Bordeaux' : ''}</small></p>
-    <p class="center"><a id="qrLink" target="_blank" rel="noopener">Ouvrir le lien</a></p>`);
+    <p class="center"><b id="qrInfo"></b><br><small id="qrPark"></small><br><small>${v.a ? t('d.city', { a: esc(v.a) }) : ''}</small></p>
+    <p class="center"><a id="qrLink" target="_blank" rel="noopener">${t('qr.open')}</a></p>`);
   $('.qr-modes').onclick = (e) => { const b = e.target.closest('button'); if (b) render(b.dataset.m); };
   render(mode);
 }
@@ -688,12 +748,12 @@ function openQR(v, mode) {
 function surprise() {
   let pool = filtered.filter((v) => /open|closing/.test(v.status.state));
   if (pool.length < 3) pool = filtered;
-  if (!pool.length) { toast('Aucun lieu avec ces filtres 😅'); return; }
+  if (!pool.length) { toast(t('slot.none')); return; }
   const pick = pool[Math.floor(Math.random() * pool.length)];
   const slot = $('#slot');
   slot.hidden = false;
   slot.innerHTML = `<div class="slot__box"><div class="slot__burst"></div><div class="slot__card">
-    <div class="slot__title">🎰 LA ROUE DU GOÛT TOURNE…</div>
+    <div class="slot__title">${t('slot.title')}</div>
     <div class="slot__window"><div class="slot__name" id="slotName">…</div></div>
     <div id="slotEnd" style="min-height:58px"></div></div></div>`;
   const nameEl = $('#slotName');
@@ -707,11 +767,8 @@ function surprise() {
     if (elapsed < 2100) setTimeout(spin, delay);
     else {
       nameEl.textContent = `${emojiOf(pick)} ${pick.n}`;
-      $('#slotEnd').innerHTML = '<div class="slot__tada">TADAAA !</div>';
-      setTimeout(() => {
-        slot.hidden = true;
-        openDetail(pick);
-      }, 1100);
+      $('#slotEnd').innerHTML = `<div class="slot__tada">${t('slot.tada')}</div>`;
+      setTimeout(() => { slot.hidden = true; openDetail(pick); }, 1100);
     }
   };
   spin();
@@ -722,56 +779,50 @@ function surprise() {
 function openSettings() {
   const nbStaff = Object.keys({ ...staffShared, ...staffLocal }).length;
   const nbHidden = venues.filter((v) => staff(v.id).hidden).length;
-  const credits = Object.entries(photos).map(([k, p]) => `<li>${esc(CUISINES[k]?.label || TYPES[k]?.label || k)} : <a href="${esc(p.page)}" target="_blank" rel="noopener">${esc(p.author)}</a> (${esc(p.license)})</li>`).join('');
+  const credits = Object.entries(photos).map(([k, p]) => `<li>${esc(CUISINES[k] ? t('cui.' + k) : t('types.' + k))} : <a href="${esc(p.page)}" target="_blank" rel="noopener">${esc(p.author)}</a> (${esc(p.license)})</li>`).join('');
   openModal(`
     <button class="btn btn--round x" data-close>✕</button>
-    <h2>⚙️ Réglages & aide</h2>
+    <h2>${t('s.title')}</h2>
     <div class="settings">
       <section>
-        <h3>🕹️ Mode d’emploi</h3>
-        <ul>
-          <li><b>Survolez</b> une icône : une bulle résume le lieu. <b>Cliquez</b> pour la fiche complète et l’itinéraire.</li>
-          <li><b>Double-cliquez</b> une catégorie pour n’afficher qu’elle.</li>
-          <li>« 🕒 Statut » : vérifiez qui sera ouvert <b>ce soir à 20h</b> ou à une date précise.</li>
-          <li>« 📱 QR code » : le client repart avec l’itinéraire sur son téléphone.</li>
-          <li>Touche <b>/</b> pour chercher, <b>Échap</b> pour fermer.</li>
-        </ul>
+        <h3>${t('s.help')}</h3>
+        <ul>${t('s.helpList').map((x) => `<li>${x}</li>`).join('')}</ul>
       </section>
       <section>
-        <h3>❤️ Notes de l’équipe</h3>
-        <p>${nbStaff} lieu(x) annoté(s)${nbHidden ? `, ${nbHidden} masqué(s)` : ''}. Les notes sont enregistrées sur <b>cet appareil</b>. Pour les partager avec les collègues : exportez le fichier <code>equipe.json</code>, placez-le dans le dossier <code>data/</code> de l’app puis republiez-la (voir le README).</p>
+        <h3>${t('s.staff')}</h3>
+        <p>${t('s.staffText', { n: nbStaff, h: nbHidden ? t('s.hidden', { n: nbHidden }) : '' })}</p>
         <div class="row">
-          <button class="btn" id="expBtn">⬇ Exporter</button>
-          <label class="btn">⬆ Importer<input type="file" id="impFile" accept=".json,application/json" hidden></label>
-          ${nbHidden ? '<button class="btn" id="unhideBtn">👁 Réafficher les lieux masqués</button>' : ''}
-          <button class="btn btn--red" id="wipeBtn">🗑 Effacer mes notes locales</button>
+          <button class="btn" id="expBtn">${t('s.export')}</button>
+          <label class="btn">${t('s.import')}<input type="file" id="impFile" accept=".json,application/json" hidden></label>
+          ${nbHidden ? `<button class="btn" id="unhideBtn">${t('s.unhide')}</button>` : ''}
+          <button class="btn btn--red" id="wipeBtn">${t('s.wipe')}</button>
         </div>
       </section>
       <section>
-        <h3>📲 Installation & hors ligne</h3>
-        <p>${navigator.serviceWorker?.controller ? '✅ L’app est disponible hors ligne sur cet appareil.' : '⏳ Le mode hors ligne s’active après le premier chargement (en https ou en local).'}</p>
-        <p>${isStandalone() ? '✅ Vous utilisez l’app installée.' : 'L’app n’est pas encore installée sur cet appareil.'}</p>
-        <div class="row"><button class="btn btn--pop" id="guideBtn">📲 Comment installer ?</button></div>
+        <h3>${t('s.install')}</h3>
+        <p>${navigator.serviceWorker?.controller ? t('s.offlineOk') : t('s.offlineWait')}</p>
+        <p>${isStandalone() ? t('s.isInstalled') : t('s.notInstalled')}</p>
+        <div class="row"><button class="btn btn--pop" id="guideBtn">${t('s.howInstall')}</button></div>
       </section>
       <section>
-        <h3>ℹ️ Données</h3>
-        <p>${venues.length} lieux · OpenStreetMap, mise à jour du ${frDate(dataDate)}. Départ des trajets : ${esc(HOTEL.name)}, ${esc(HOTEL.addr)}. Les prix (€) sont estimés selon le type de lieu : corrigez-les dans les fiches.</p>
-        <details><summary>Crédits photos (Wikimedia Commons)</summary><ul class="credits">${credits}</ul></details>
+        <h3>${t('s.data')}</h3>
+        <p>${t('s.dataText', { n: venues.length, d: fmtDate(dataDate), h: esc(`${HOTEL.name}, ${HOTEL.addr}`), p: nbParkings })}</p>
+        <details><summary>${t('s.credits')}</summary><ul class="credits">${credits}</ul></details>
       </section>
     </div>`);
   $('#guideBtn').onclick = openInstallGuide;
   $('#expBtn').onclick = exportStaff;
   $('#impFile').onchange = importStaff;
   $('#wipeBtn').onclick = () => {
-    if (!confirm('Effacer toutes les notes enregistrées sur cet appareil ? (Le fichier partagé n’est pas touché.)')) return;
+    if (!confirm(t('s.wipeConfirm'))) return;
     staffLocal = {}; store.set(STAFF_KEY, staffLocal);
     venues.forEach((v) => v.marker.setIcon(pinIcon(v)));
-    applyFilters(); closeModal(); toast('Notes locales effacées');
+    applyFilters(); closeModal(); toast(t('s.wiped'));
   };
   const un = $('#unhideBtn');
   if (un) un.onclick = () => {
     for (const v of venues) if (staff(v.id).hidden) setStaff(v.id, { hidden: false });
-    applyFilters(); closeModal(); toast('Tous les lieux sont visibles');
+    applyFilters(); closeModal(); toast(t('s.unhidden'));
   };
 }
 
@@ -779,7 +830,6 @@ function exportStaff() {
   const merged = {};
   for (const [id, s] of Object.entries({ ...staffShared })) merged[id] = { ...s };
   for (const [id, s] of Object.entries(staffLocal)) merged[id] = { ...(merged[id] || {}), ...s };
-  // nettoyage + nom lisible
   for (const [id, s] of Object.entries(merged)) {
     for (const k of Object.keys(s)) if (!s[k] && k !== 'nom') delete s[k];
     if (Object.keys(s).filter((k) => k !== 'nom').length === 0) { delete merged[id]; continue; }
@@ -791,7 +841,7 @@ function exportStaff() {
   a.download = 'equipe.json';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  toast(`${Object.keys(merged).length} fiche(s) exportée(s)`);
+  toast(t('s.exported', { n: Object.keys(merged).length }));
 }
 
 async function importStaff(e) {
@@ -803,8 +853,8 @@ async function importStaff(e) {
     for (const [id, s] of Object.entries(lieux)) if (byId.has(id)) { const { nom, ...rest } = s; staffLocal[id] = { ...(staffLocal[id] || {}), ...rest }; n++; }
     store.set(STAFF_KEY, staffLocal);
     venues.forEach((v) => v.marker.setIcon(pinIcon(v)));
-    applyFilters(); closeModal(); toast(`${n} fiche(s) importée(s) ✔`);
-  } catch { toast('Fichier invalide 😕'); }
+    applyFilters(); closeModal(); toast(t('s.imported', { n }));
+  } catch { toast(t('s.badFile')); }
 }
 
 // ------------------------------------------------------------------ Utilitaires UI
@@ -815,16 +865,11 @@ function openModal(html) {
 function closeModal() { $('#modal').hidden = true; }
 let toastTimer;
 function toast(msg) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.classList.add('show');
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
-}
-function frDate(iso) {
-  if (!iso) return '?';
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
 // ------------------------------------------------------------------ PWA : installation
@@ -848,57 +893,24 @@ function detectDevice() {
   return { ios, android, mobile: ios || android, inApp, browser };
 }
 
-const BROWSER_NAMES = { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox', safari: 'Safari', samsung: 'Samsung Internet', brave: 'Brave', opera: 'Opera', autre: 'navigateur' };
+const BROWSER_NAMES = { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox', safari: 'Safari', samsung: 'Samsung Internet', brave: 'Brave', opera: 'Opera', autre: 'Browser' };
 
 // Étapes d'installation selon l'appareil et le navigateur
 function installSteps(d) {
-  if (d.inApp) return { title: 'Navigateur intégré à une appli', steps: [
-    'Vous avez ouvert le lien depuis une appli (WhatsApp, Messenger, scanner de QR…) : l’installation y est impossible.',
-    `Touchez le menu ⋮ ou ⋯ puis <b>« Ouvrir dans ${d.ios ? 'Safari' : 'Chrome'} »</b>.`,
-    'Suivez ensuite les étapes affichées par le bouton « Installer ».'] };
-  if (d.ios) {
-    if (d.browser === 'safari') return { title: 'iPhone / iPad · Safari', steps: [
-      'Touchez le bouton <b>Partager</b> <span class="kbd">⬆︎</span> (carré avec une flèche, en bas de l’écran, ou en haut sur iPad).',
-      'Faites défiler et touchez <b>« Sur l’écran d’accueil »</b> <span class="kbd">⊞</span>.',
-      'Touchez <b>« Ajouter »</b> en haut à droite. L’icône apparaît sur l’écran d’accueil.'] };
-    return { title: `iPhone / iPad · ${BROWSER_NAMES[d.browser]}`, steps: [
-      'Touchez le bouton <b>Partager</b> <span class="kbd">⬆︎</span> (dans la barre d’adresse ou le menu ⋯).',
-      'Choisissez <b>« Sur l’écran d’accueil »</b>, puis <b>« Ajouter »</b>.',
-      'L’option n’apparaît pas ? Ouvrez l’adresse dans <b>Safari</b> : c’est le navigateur le plus fiable sur iPhone.'] };
-  }
+  const B = BROWSER_NAMES[d.browser];
+  if (d.inApp) return { title: t('i.inAppTitle'), steps: t('i.inApp').map((s) => s.replace('{b}', d.ios ? 'Safari' : 'Chrome')) };
+  if (d.ios) return d.browser === 'safari' ? { title: 'iPhone / iPad · Safari', steps: t('i.iosSafari') } : { title: `iPhone / iPad · ${B}`, steps: t('i.iosOther') };
   if (d.android) {
-    if (d.browser === 'samsung') return { title: 'Android · Samsung Internet', steps: [
-      'Touchez le menu <span class="kbd">☰</span> en bas à droite.',
-      'Choisissez <b>« Ajouter la page à »</b> puis <b>« Écran d’accueil »</b>.',
-      'Validez avec <b>« Ajouter »</b>.'] };
-    if (d.browser === 'firefox') return { title: 'Android · Firefox', steps: [
-      'Touchez le menu <span class="kbd">⋮</span>.',
-      'Choisissez <b>« Installer »</b> ou <b>« Ajouter à l’écran d’accueil »</b>.',
-      'Validez avec <b>« Ajouter »</b>.'] };
-    return { title: `Android · ${BROWSER_NAMES[d.browser]}`, steps: [
-      'Touchez le menu <span class="kbd">⋮</span> en haut à droite.',
-      'Choisissez <b>« Installer l’application »</b> (ou <b>« Ajouter à l’écran d’accueil »</b> puis <b>« Installer »</b>).',
-      'Validez. L’icône apparaît sur l’écran d’accueil et dans la liste des applis.'] };
+    if (d.browser === 'samsung') return { title: 'Android · Samsung Internet', steps: t('i.samsung') };
+    if (d.browser === 'firefox') return { title: 'Android · Firefox', steps: t('i.androidFirefox') };
+    return { title: `Android · ${B}`, steps: t('i.android') };
   }
-  // Ordinateur
-  if (d.browser === 'edge') return { title: 'Ordinateur · Microsoft Edge', steps: [
-    'Cliquez l’icône <b>« Application disponible »</b> <span class="kbd">⊞</span> à droite de la barre d’adresse.',
-    'Sinon : menu <span class="kbd">⋯</span> → <b>« Applications »</b> → <b>« Installer ce site en tant qu’application »</b>.',
-    'Cliquez <b>« Installer »</b>. L’app s’ouvre dans sa propre fenêtre et peut être épinglée à la barre des tâches.'] };
-  if (d.browser === 'firefox') return { title: 'Ordinateur · Firefox', warn: true, steps: [
-    'Firefox ne sait pas installer d’applications web sur ordinateur (l’app fonctionne quand même, y compris hors ligne).',
-    'Pour l’installer, ouvrez cette même adresse dans <b>Microsoft Edge</b> (présent sur tous les PC Windows) ou <b>Google Chrome</b>, puis cliquez sur « Installer ».',
-    'Ou simplement : ajoutez un <b>favori</b> (Ctrl + D) ou un raccourci sur le bureau.'] };
-  if (d.browser === 'safari') return { title: 'Mac · Safari', steps: [
-    'Menu <b>Fichier</b> → <b>« Ajouter au Dock… »</b> (macOS Sonoma ou plus récent).',
-    'Cliquez <b>« Ajouter »</b>. L’app apparaît dans le Dock et le Launchpad.'] };
-  if (d.browser === 'brave') return { title: 'Ordinateur · Brave', steps: [
-    'Cliquez l’icône d’installation <span class="kbd">⤓</span> à droite de la barre d’adresse.',
-    'Sinon : menu <span class="kbd">≡</span> → <b>« Enregistrer et partager »</b> → <b>« Installer Bordeaux à la carte… »</b>.'] };
-  return { title: `Ordinateur · ${BROWSER_NAMES[d.browser]}`, steps: [
-    'Cliquez l’icône d’installation <span class="kbd">⤓</span> (petit écran avec une flèche) à droite de la barre d’adresse.',
-    'Sinon : menu <span class="kbd">⋮</span> → <b>« Caster, enregistrer et partager »</b> → <b>« Installer la page en tant qu’application… »</b>.',
-    'Cliquez <b>« Installer »</b>. L’app s’ouvre dans sa propre fenêtre et peut être épinglée à la barre des tâches.'] };
+  const pc = t('i.desktop');
+  if (d.browser === 'edge') return { title: `${pc} · Microsoft Edge`, steps: t('i.edge') };
+  if (d.browser === 'firefox') return { title: `${pc} · Firefox`, warn: true, steps: t('i.firefox') };
+  if (d.browser === 'safari') return { title: 'Mac · Safari', steps: t('i.safariMac') };
+  if (d.browser === 'brave') return { title: `${pc} · Brave`, steps: t('i.brave') };
+  return { title: `${pc} · ${B}`, steps: t('i.chrome') };
 }
 
 function openInstallGuide() {
@@ -917,21 +929,21 @@ function openInstallGuide() {
   const list = (o) => `<ol class="steps">${o.steps.map((s) => `<li>${s}</li>`).join('')}</ol>`;
   openModal(`
     <button class="btn btn--round x" data-close>✕</button>
-    <h2>📲 Installer l’app</h2>
-    ${isStandalone() ? '<p class="ok-box">✅ Vous utilisez déjà l’app installée !</p>' : ''}
+    <h2>${t('i.title')}</h2>
+    ${isStandalone() ? `<p class="ok-box">${t('i.already')}</p>` : ''}
     <div class="install-main${main.warn ? ' warn' : ''}">
-      <p class="install-device">Votre appareil : <b>${esc(main.title)}</b></p>
+      <p class="install-device">${t('i.device', { x: esc(main.title) })}</p>
       ${list(main)}
     </div>
     ${d.mobile ? '' : `
     <div class="install-qr">
       <div class="qr qr--small">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
-      <p><b>Installer sur un téléphone ?</b><br>Scannez ce code avec l’appareil photo, puis touchez « Installer » dans l’app.<br><small>${esc(appUrl)}</small></p>
+      <p>${t('i.phone')}<br><small>${esc(appUrl)}</small></p>
     </div>`}
-    <details class="install-others"><summary>Autres appareils</summary>
+    <details class="install-others"><summary>${t('i.others')}</summary>
       ${others.map((o) => `<h4>${esc(o.title)}</h4>${list(o)}`).join('')}
     </details>
-    <p class="raw">Une fois installée, l’app s’ouvre depuis son icône et fonctionne même sans internet.</p>`);
+    <p class="raw">${t('i.after')}</p>`);
 }
 
 function updateInstallButton() {
@@ -943,7 +955,6 @@ function updateInstallButton() {
 $('#installBtn').addEventListener('click', async () => {
   const bip = window.__bip;
   if (bip) {
-    // Le navigateur sait installer directement : on ouvre sa fenêtre d'installation
     bip.prompt();
     const choice = await bip.userChoice.catch(() => null);
     window.__bip = null;
@@ -957,16 +968,17 @@ window.addEventListener('bip-ready', updateInstallButton);
 window.addEventListener('appinstalled', () => {
   window.__bip = null;
   updateInstallButton();
-  toast('App installée ! Retrouvez-la avec son icône 🎉');
+  toast(t('toast.installed'));
 });
 updateInstallButton();
+
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.register('sw.js').then((reg) => {
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
       w?.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) toast('Nouvelle version disponible : rechargez la page 🔄');
+        if (w.state === 'installed' && navigator.serviceWorker.controller) toast(t('toast.newVersion'));
       });
     });
   }).catch(() => { /* file:// ou navigateur sans SW */ });

@@ -4,9 +4,9 @@
 // (le résultat est alors marqué « approx »).
 
 import { CLOSING_SOON_MIN } from './config.js';
+import { t, fmtTime } from './i18n.js';
 
 const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-export const DAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const DAY_RE = '(?:Mo|Tu|We|Th|Fr|Sa|Su|PH)';
 
 const cache = new Map();
@@ -98,10 +98,10 @@ function parseTimes(s) {
 
 const dayIdx = (d) => (d.getDay() + 6) % 7;
 
-// Statut à un instant donné : open | closing | closed | unknown
+// Statut à un instant donné : open | closing | closed | unknown (textes dans la langue active)
 export function hoursStatus(raw, at = new Date()) {
   const h = parseHours(raw);
-  if (!h) return { state: 'unknown', text: 'Horaires non renseignés' };
+  if (!h) return { state: 'unknown', text: t('h.unknown') };
   const d = dayIdx(at), min = at.getHours() * 60 + at.getMinutes();
   // intervalles actifs (aujourd'hui, ou débordement de la veille après minuit)
   let closeAt = null;
@@ -114,28 +114,23 @@ export function hoursStatus(raw, at = new Date()) {
       const nxt = h.week[(d + 1) % 7].find(([a]) => a === 0);
       if (nxt) closeAt = 1440 + nxt[1];
     }
-    if (h.always || closeAt - min >= 1440) return { state: 'open', text: 'Ouvert 24h/24', approx: h.approx };
+    if (h.always || closeAt - min >= 1440) return { state: 'open', text: t('h.always'), short: t('h.always'), approx: h.approx };
     const left = closeAt - min;
-    const label = fmt(closeAt % 1440);
-    if (left <= CLOSING_SOON_MIN) return { state: 'closing', text: `Ferme bientôt · ${label}`, short: `ferme ${label}`, left, approx: h.approx };
-    return { state: 'open', text: `Ouvert · ferme à ${label}`, short: `jusqu'à ${label}`, left, approx: h.approx };
+    const label = fmtTime(closeAt % 1440);
+    if (left <= CLOSING_SOON_MIN) return { state: 'closing', text: t('h.closing', { t: label }), short: t('h.closingShort', { t: label }), left, approx: h.approx };
+    return { state: 'open', text: t('h.open', { t: label }), short: t('h.openShort', { t: label }), left, approx: h.approx };
   }
   // prochaine ouverture
   for (let k = 0; k < 7; k++) {
     const day = (d + k) % 7;
     const next = h.week[day].filter(([a]) => k > 0 || a > min).sort((x, y) => x[0] - y[0])[0];
     if (next) {
-      const when = k === 0 ? `à ${fmt(next[0])}` : k === 1 ? `demain ${fmt(next[0])}` : `${DAY_NAMES[day]} ${fmt(next[0])}`;
-      const inMin = k === 0 ? next[0] - min : null;
-      return { state: 'closed', text: `Fermé · ouvre ${when}`, short: `ouvre ${when}`, opensIn: inMin, approx: h.approx };
+      const tm = fmtTime(next[0]);
+      const w = k === 0 ? t('h.at', { t: tm }) : k === 1 ? t('h.tomorrow', { t: tm }) : t('h.day', { d: t('days')[day], t: tm });
+      return { state: 'closed', text: t('h.closed', { w }), short: t('h.closedShort', { w }), opensIn: k === 0 ? next[0] - min : null, approx: h.approx };
     }
   }
-  return { state: 'closed', text: 'Fermé', short: 'fermé', approx: h.approx };
-}
-
-export function fmt(min) {
-  const h = Math.floor(min / 60) % 24, m = min % 60;
-  return `${h}h${m ? String(m).padStart(2, '0') : ''}`;
+  return { state: 'closed', text: t('h.closedNever'), short: t('h.closedNever'), approx: h.approx };
 }
 
 // Tableau de la semaine pour l'affichage
@@ -143,8 +138,9 @@ export function weekTable(raw) {
   const h = parseHours(raw);
   if (!h) return null;
   return h.week.map((iv, i) => ({
-    day: DAY_NAMES[i],
-    text: iv.length === 1 && iv[0][0] === 0 && iv[0][1] >= 1440 ? '24h/24' : iv.length ? iv.map(([a, b]) => `${fmt(a)} – ${b % 1440 === 0 ? 'minuit' : fmt(b % 1440)}`).join(' · ') : 'Fermé',
+    day: t('days')[i],
+    text: iv.length === 1 && iv[0][0] === 0 && iv[0][1] >= 1440 ? t('h.24')
+      : iv.length ? iv.map(([a, b]) => `${fmtTime(a)} – ${b % 1440 === 0 ? t('h.midnight') : fmtTime(b % 1440)}`).join(' · ') : t('h.dayClosed'),
     closed: !iv.length,
   }));
 }

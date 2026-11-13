@@ -25,97 +25,94 @@
   <div id="app" class="is-loading">
 
     <!-- Panneau de gauche : recherche, filtres, liste -->
-    <aside id="panel" class="panel" aria-label="Recherche et filtres">
-      <button class="sheet-handle" id="sheetHandle" aria-label="Agrandir ou réduire le panneau"><span></span></button>
+    <aside id="panel" class="panel" data-i18n-aria="panel.label">
+      <button class="sheet-handle" id="sheetHandle" data-i18n-aria="sheet"><span></span></button>
       <header class="brand">
         <div class="brand__logo" aria-hidden="true"><span>🍽️</span></div>
         <div class="brand__text">
-          <h1>Bordeaux <span>à la carte !</span></h1>
-          <p class="brand__sub">Départ : <b>🏨 Ibis Euratlantique</b></p>
+          <h1><span data-i18n="brand.a">Bordeaux</span> <span class="brand__b" data-i18n="brand.b">à la carte !</span></h1>
+          <p class="brand__sub"><span data-i18n="brand.from">Départ :</span> <b>🏨 Ibis Euratlantique</b></p>
         </div>
-        <button id="installBtn" class="btn btn--small btn--pop" hidden>⬇ Installer</button>
+        <div class="brand__btns">
+          <button id="langBtn" class="btn btn--small" data-i18n="lang.btn" data-i18n-title="lang.title">🌐 EN</button>
+          <button id="installBtn" class="btn btn--small btn--pop" data-i18n="install" hidden>⬇ Installer</button>
+        </div>
       </header>
 
       <div class="search">
         <span class="search__icon" aria-hidden="true">🔎</span>
-        <input id="q" type="search" autocomplete="off" placeholder="Nom, cuisine, rue…" aria-label="Rechercher">
-        <button id="clearQ" class="search__clear" aria-label="Effacer" hidden>✕</button>
+        <input id="q" type="search" autocomplete="off" data-i18n-ph="search.ph" data-i18n-aria="search.label" placeholder="Nom, cuisine, rue…">
+        <button id="clearQ" class="search__clear" data-i18n-aria="clear" hidden>✕</button>
       </div>
 
-      <div class="when" id="when" role="group" aria-label="Statut d'ouverture à quel moment">
-        <span class="when__label">🕒 Statut</span>
-        <button data-when="now" class="on">Maintenant</button>
-        <button data-when="midi">Midi</button>
-        <button data-when="soir">20h</button>
-        <button data-when="tard">23h</button>
-        <label class="when__custom" title="Choisir une date et une heure">
-          📅<input type="datetime-local" id="whenCustom" aria-label="Date et heure personnalisées">
+      <div class="when" id="when" role="group" data-i18n-aria="when.group">
+        <span class="when__label" data-i18n="when.label">🕒 Statut</span>
+        <button data-when="now" class="on" data-i18n="when.now">Maintenant</button>
+        <button data-when="midi" data-i18n="when.midi">Midi</button>
+        <button data-when="soir" data-i18n="when.soir">20h</button>
+        <button data-when="tard" data-i18n="when.tard">23h</button>
+        <label class="when__custom" data-i18n-title="when.custom">
+          📅<input type="datetime-local" id="whenCustom" data-i18n-aria="when.custom">
         </label>
       </div>
 
-      <section class="filters" aria-label="Filtres">
+      <section class="filters" data-i18n-aria="filters">
         <div class="chips" id="typeChips"></div>
         <div class="chips chips--cuisine" id="cuisineChips"></div>
         <div class="filters__row">
-          <div class="seg" id="priceSeg" role="group" aria-label="Prix">
-            <button data-p="1" title="Pas cher">€</button>
-            <button data-p="2" title="Moyen">€€</button>
-            <button data-p="3" title="Élevé">€€€</button>
+          <div class="seg" id="priceSeg" role="group" data-i18n-aria="price.group">
+            <button data-p="1" data-i18n-title="price.1">€</button>
+            <button data-p="2" data-i18n-title="price.2">€€</button>
+            <button data-p="3" data-i18n-title="price.3">€€€</button>
           </div>
           <label class="walkmax">🚶
-            <select id="walkMax" aria-label="Temps de marche maximum">
-              <option value="0">Toutes distances</option>
-              <option value="10">≤ 10 min à pied</option>
-              <option value="15">≤ 15 min</option>
-              <option value="20">≤ 20 min</option>
-              <option value="30">≤ 30 min</option>
-            </select>
+            <select id="walkMax" data-i18n-aria="walk.label"></select>
           </label>
         </div>
         <div class="chips chips--toggles" id="toggleChips">
-          <button data-t="open">🟢 Ouvert</button>
-          <button data-t="fav">❤️ Coups de cœur</button>
-          <button data-t="ts">☀️ Terrasse</button>
-          <button data-t="vg">🥗 Végé</button>
-          <button data-t="wc">♿ Accessible</button>
+          <button data-t="open" data-i18n="tg.open">🟢 Ouvert</button>
+          <button data-t="fav" data-i18n="tg.fav">❤️ Coups de cœur</button>
+          <button data-t="ts" data-i18n="tg.ts">☀️ Terrasse</button>
+          <button data-t="vg" data-i18n="tg.vg">🥗 Végé</button>
+          <button data-t="wc" data-i18n="tg.wc">♿ Accessible</button>
         </div>
       </section>
 
       <div class="results-head">
         <b id="count">…</b>
-        <select id="sort" aria-label="Trier">
-          <option value="dist">Plus proches</option>
-          <option value="open">Ouverts d'abord</option>
-          <option value="stars">Mieux notés</option>
-          <option value="name">A → Z</option>
+        <select id="sort" data-i18n-aria="sort.label">
+          <option value="dist" data-i18n="sort.dist">Plus proches</option>
+          <option value="open" data-i18n="sort.open">Ouverts d'abord</option>
+          <option value="stars" data-i18n="sort.stars">Mieux notés</option>
+          <option value="name" data-i18n="sort.name">A → Z</option>
         </select>
-        <button id="resetBtn" class="btn btn--ghost btn--small" title="Réinitialiser les filtres">↺</button>
+        <button id="resetBtn" class="btn btn--ghost btn--small" data-i18n-title="reset">↺</button>
       </div>
       <ul id="list" class="list" aria-live="polite"></ul>
     </aside>
 
     <!-- Carte -->
     <main id="mapWrap" class="map-wrap">
-      <div id="map" aria-label="Carte de Bordeaux"></div>
+      <div id="map" data-i18n-aria="map.label"></div>
       <div class="map-tools">
-        <button id="btnRandom" class="btn btn--pop btn--big" title="Tirer un lieu au hasard parmi les résultats">🎲 Surprends-moi !</button>
-        <button id="btnHotel" class="btn btn--round" title="Recentrer sur l'hôtel">🏨</button>
-        <button id="btnSettings" class="btn btn--round" title="Réglages, aide et partage">⚙️</button>
+        <button id="btnRandom" class="btn btn--pop btn--big" data-i18n="random" data-i18n-title="random.title">🎲 Surprends-moi !</button>
+        <button id="btnHotel" class="btn btn--round" data-i18n-title="hotel.title">🏨</button>
+        <button id="btnSettings" class="btn btn--round" data-i18n-title="settings.title">⚙️</button>
       </div>
-      <div class="legend" aria-label="Légende">
-        <span><i class="light light--open"></i>Ouvert</span>
-        <span><i class="light light--closing"></i>Ferme bientôt</span>
-        <span><i class="light light--closed"></i>Fermé</span>
-        <span><i class="light light--unknown"></i>Inconnu</span>
+      <div class="legend" data-i18n-aria="legend">
+        <span><i class="light light--open"></i><span data-i18n="st.open">Ouvert</span></span>
+        <span><i class="light light--closing"></i><span data-i18n="st.closing">Ferme bientôt</span></span>
+        <span><i class="light light--closed"></i><span data-i18n="st.closed">Fermé</span></span>
+        <span><i class="light light--unknown"></i><span data-i18n="st.unknown">Inconnu</span></span>
       </div>
       <div id="whenBanner" class="when-banner" hidden></div>
       <div id="hoverCard" class="hover-card" hidden></div>
       <div id="toast" class="toast" role="status"></div>
-      <div class="loader" id="loader"><div class="loader__burst">CHARGEMENT…</div></div>
+      <div class="loader" id="loader"><div class="loader__burst" data-i18n="loading">CHARGEMENT…</div></div>
     </main>
 
     <!-- Fiche détaillée -->
-    <section id="detail" class="detail" aria-hidden="true" aria-label="Fiche du lieu"></section>
+    <section id="detail" class="detail" aria-hidden="true" data-i18n-aria="d.label"></section>
   </div>
 
   <div id="modal" class="modal" hidden>

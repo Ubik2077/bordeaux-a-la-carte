@@ -1,38 +1,101 @@
-// Estimation des trajets depuis l'hôtel : à pied, tram TBM, vélo, taxi.
-// Tout est calculé localement (fonctionne hors ligne). Ce sont des estimations :
-// le bouton Google Maps donne l'itinéraire exact en temps réel.
+// Trajets depuis l'hôtel : à pied, tram TBM, vélo, taxi, voiture (+ parking).
+// Itinéraires calculés sur le vrai réseau de rues (hors ligne). Les durées restent des
+// estimations : le bouton Google Maps donne le temps réel.
+// Ce module ne produit pas de texte : l'affichage (et la langue) est géré par app.js.
 
 import { HOTEL, TRAVEL, PRICES } from './config.js';
+import { RoadGraph, hav } from './graph.js';
 
-const R = 6371000;
-export function dist(aLa, aLo, bLa, bLo) {
-  const toRad = Math.PI / 180;
-  const dLa = (bLa - aLa) * toRad, dLo = (bLo - aLo) * toRad;
-  const s = Math.sin(dLa / 2) ** 2 + Math.cos(aLa * toRad) * Math.cos(bLa * toRad) * Math.sin(dLo / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
+export const dist = hav;
+const WALK = (TRAVEL.walkKmh * 1000) / 60; // m / min
+const BIKE = (TRAVEL.bikeKmh * 1000) / 60;
+const HOTEL_PT = [HOTEL.la, HOTEL.lo];
+
+let G = null, footTree = null, carTree = null, hFoot = null, hCar = null;
+let parks = [];
+let net = null;
+
+export function initRouting({ graph, tram, parkings }) {
+  G = new RoadGraph(graph);
+  hFoot = G.nearest(HOTEL.la, HOTEL.lo, 'foot');
+  hCar = G.nearest(HOTEL.la, HOTEL.lo, 'car');
+  footTree = G.tree('foot', hFoot.node);
+  carTree = G.tree('car', hCar.node);
+  parks = parkings.filter((p) => snap(p, 'car'));
+  initTram(tram);
 }
 
-const walkMin = (m) => (m * TRAVEL.detour) / (TRAVEL.walkKmh * 1000 / 60);
+// Carrefour le plus proche d'un point (mis en cache sur l'objet)
+function snap(p, mode) {
+  const k = mode === 'foot' ? '_sf' : '_sc';
+  if (p[k] === undefined) p[k] = G ? G.nearest(p.la, p.lo, mode) : null;
+  return p[k];
+}
 
-let net = null; // réseau tram précalculé depuis l'hôtel
+// Distance à pied réelle (m) depuis l'hôtel, ou null si inconnue
+function footFromHotel(p) {
+  const s = snap(p, 'foot');
+  if (!s) return null;
+  const d = footTree.dist[s.node];
+  return isFinite(d) ? d + s.d + hFoot.d : null;
+}
 
-// Dijkstra sur (arrêt, ligne) depuis l'hôtel
-export function initTram(tram) {
+export function walkInfo(v) {
+  const straight = hav(HOTEL.la, HOTEL.lo, v.la, v.lo);
+  const d = footFromHotel(v) ?? straight * TRAVEL.detour;
+  return { d, min: d / WALK };
+}
+
+function walkPathFromHotel(p) {
+  const s = snap(p, 'foot');
+  const pts = s && G.treePath(footTree, s.node);
+  return pts ? [HOTEL_PT, ...pts, [p.la, p.lo]] : [HOTEL_PT, [p.la, p.lo]];
+}
+
+// Marche entre deux points : estimation rapide, ou vrai chemin si withPath
+function walkBetween(a, b, withPath) {
+  if (withPath && G) {
+    const sa = snap(a, 'foot'), sb = snap(b, 'foot');
+    const r = sa && sb && G.route('foot', sa.node, sb.node);
+    if (r) {
+      const m = r.len + sa.d + sb.d;
+      return { m, min: m / WALK, pts: [[a.la, a.lo], ...r.pts, [b.la, b.lo]] };
+    }
+  }
+  const m = hav(a.la, a.lo, b.la, b.lo) * TRAVEL.detour;
+  return { m, min: m / WALK, pts: [[a.la, a.lo], [b.la, b.lo]] };
+}
+
+// Trajet voiture depuis l'hôtel jusqu'à un point
+function driveTo(p, withPath) {
+  const s = snap(p, 'car');
+  if (!s || !isFinite(carTree.dist[s.node])) {
+    const m = hav(HOTEL.la, HOTEL.lo, p.la, p.lo) * TRAVEL.detour;
+    return { m, min: m / ((TRAVEL.taxiKmh * 1000) / 60), pts: [HOTEL_PT, [p.la, p.lo]] };
+  }
+  const min = (carTree.dist[s.node] / 60) * TRAVEL.trafficFactor + (hCar.d + s.d) / WALK * 0.3;
+  const m = carTree.len[s.node] + s.d + hCar.d;
+  let pts = [HOTEL_PT, [p.la, p.lo]];
+  if (withPath) { const tp = G.treePath(carTree, s.node); if (tp) pts = [HOTEL_PT, ...tp, [p.la, p.lo]]; }
+  return { m, min, pts };
+}
+
+// ---------------------------------------------------------------- Tram
+function initTram(tram) {
   const stops = new Map(tram.stops.map((s) => [s.name, s]));
   const colour = Object.fromEntries(tram.lines.map((l) => [l.ref, l.colour]));
-  // arêtes : clé "arrêt|ligne" → [{to, line, t}]
   const adj = new Map();
   const add = (a, b, line) => {
-    const A = stops.get(a), Bs = stops.get(b);
-    if (!A || !Bs) return;
-    const t = (dist(A.la, A.lo, Bs.la, Bs.lo) * 1.15) / (TRAVEL.tramKmh * 1000 / 60) + TRAVEL.tramDwellMin;
+    const A = stops.get(a), B = stops.get(b);
+    if (!A || !B) return;
+    const t = (hav(A.la, A.lo, B.la, B.lo) * 1.15) / ((TRAVEL.tramKmh * 1000) / 60) + TRAVEL.tramDwellMin;
     const k = a + '|' + line;
     if (!adj.has(k)) adj.set(k, []);
-    adj.get(k).push({ to: b, line, t });
+    adj.get(k).push({ to: b, t });
   };
   for (const L of tram.lines) for (const v of L.variants) for (let i = 1; i < v.length; i++) { add(v[i - 1], v[i], L.ref); add(v[i], v[i - 1], L.ref); }
 
-  const best = new Map(); // "arrêt|ligne" → {t, prev, walk}
+  const best = new Map();
   const pq = [];
   const push = (k, t, prev, extra) => {
     const cur = best.get(k);
@@ -41,9 +104,9 @@ export function initTram(tram) {
     pq.push([t, k]);
   };
   for (const s of tram.stops) {
-    const d = dist(HOTEL.la, HOTEL.lo, s.la, s.lo);
-    if (d > TRAVEL.maxWalkToStopM) continue;
-    for (const line of s.lines) push(s.name + '|' + line, walkMin(d) + TRAVEL.tramWaitMin, null, { walk: walkMin(d), board: s.name });
+    if (hav(HOTEL.la, HOTEL.lo, s.la, s.lo) > TRAVEL.maxWalkToStopM) continue;
+    const walk = (footFromHotel(s) ?? hav(HOTEL.la, HOTEL.lo, s.la, s.lo) * TRAVEL.detour) / WALK;
+    for (const line of s.lines) push(s.name + '|' + line, walk + TRAVEL.tramWaitMin, null, { walk });
   }
   while (pq.length) {
     pq.sort((a, b) => b[0] - a[0]);
@@ -51,10 +114,8 @@ export function initTram(tram) {
     if (best.get(k).t < t) continue;
     const [stop, line] = k.split('|');
     for (const e of adj.get(k) || []) push(e.to + '|' + line, t + e.t, k, {});
-    // correspondance vers une autre ligne au même arrêt
-    for (const other of stops.get(stop).lines) if (other !== line) push(stop + '|' + other, t + TRAVEL.tramTransferMin, k, { transfer: true });
+    for (const other of stops.get(stop).lines) if (other !== line) push(stop + '|' + other, t + TRAVEL.tramTransferMin, k, {});
   }
-  // meilleur temps par arrêt (toutes lignes confondues)
   const atStop = new Map();
   for (const [k, v] of best) {
     const stop = k.split('|')[0];
@@ -64,7 +125,6 @@ export function initTram(tram) {
 }
 
 function tramLegs(key) {
-  // remonte la chaîne et découpe en tronçons par ligne
   const chain = [];
   for (let k = key; k; k = net.best.get(k).prev) chain.unshift(k);
   const legs = [];
@@ -77,91 +137,101 @@ function tramLegs(key) {
   return legs.filter((l) => l.stops.length > 1);
 }
 
-function money(x) { return x === 0 ? 'Gratuit' : `≈ ${x.toFixed(x < 10 ? 2 : 0).replace('.', ',').replace(',00', '')} €`; }
-
-export function walkInfo(v) {
-  const d = dist(HOTEL.la, HOTEL.lo, v.la, v.lo);
-  return { d, min: walkMin(d) };
-}
-
-// Toutes les options de trajet pour un lieu
-export function travelOptions(v) {
-  const d = dist(HOTEL.la, HOTEL.lo, v.la, v.lo);
-  const road = d * TRAVEL.detour;
+// ---------------------------------------------------------------- Options de trajet
+export function travelOptions(v, { paths = false } = {}) {
+  const w = walkInfo(v);
   const opts = [];
-  const walk = walkMin(d);
-  opts.push({
-    mode: 'walk', icon: '🚶', label: 'À pied', min: walk, cost: 0, costLabel: 'Gratuit',
-    detail: road < 1000 ? `${Math.round(road / 10) * 10} m` : `${(road / 1000).toFixed(1).replace('.', ',')} km`,
-    gmode: 'walking',
-    path: [{ kind: 'walk', pts: [[HOTEL.la, HOTEL.lo], [v.la, v.lo]] }],
-  });
+  const walkPts = paths ? walkPathFromHotel(v) : [HOTEL_PT, [v.la, v.lo]];
 
-  if (net && walk > 10) {
+  opts.push({ mode: 'walk', icon: '🚶', min: w.min, cost: 0, m: w.d, gmode: 'walking', path: [{ kind: 'walk', pts: walkPts }] });
+
+  // Tram
+  if (net && w.min > 10) {
     let bestT = Infinity, bestStop = null;
     for (const [name, s] of net.stops) {
-      const ds = dist(s.la, s.lo, v.la, v.lo);
+      const ds = hav(s.la, s.lo, v.la, v.lo);
       if (ds > TRAVEL.maxWalkToStopM) continue;
       const a = net.atStop.get(name);
       if (!a) continue;
-      const t = a.t + walkMin(ds);
+      const t = a.t + (ds * TRAVEL.detour) / WALK;
       if (t < bestT) { bestT = t; bestStop = name; }
     }
-    if (bestStop && bestT < walk - 3) {
-      const a = net.atStop.get(bestStop);
-      const legs = tramLegs(a.key);
+    if (bestStop && bestT < w.min - 3) {
+      const legs = tramLegs(net.atStop.get(bestStop).key);
       if (legs.length) {
-        const first = net.best.get(legs[0].stops[0] + '|' + legs[0].line);
-        const boardStop = net.stops.get(legs[0].stops[0]);
+        const board = net.stops.get(legs[0].stops[0]);
         const dest = net.stops.get(bestStop);
-        const walkEnd = walkMin(dist(dest.la, dest.lo, v.la, v.lo));
-        const path = [{ kind: 'walk', pts: [[HOTEL.la, HOTEL.lo], [boardStop.la, boardStop.lo]] }];
+        const first = net.best.get(legs[0].stops[0] + '|' + legs[0].line);
+        const end = walkBetween(dest, v, paths);
+        const min = net.atStop.get(bestStop).t + end.min;
+        const path = [{ kind: 'walk', pts: paths ? walkPathFromHotel(board) : [HOTEL_PT, [board.la, board.lo]] }];
         for (const L of legs) path.push({ kind: 'tram', colour: L.colour, pts: L.stops.map((n) => [net.stops.get(n).la, net.stops.get(n).lo]) });
-        path.push({ kind: 'walk', pts: [[dest.la, dest.lo], [v.la, v.lo]] });
+        path.push({ kind: 'walk', pts: end.pts });
         opts.push({
-          mode: 'tram', icon: '🚋', label: 'Tram', min: bestT, cost: PRICES.tram, costLabel: money(PRICES.tram),
+          mode: 'tram', icon: '🚋', min, cost: PRICES.tram, gmode: 'transit',
           legs: legs.map((L) => ({ line: L.line, colour: L.colour, from: L.stops[0], to: L.stops[L.stops.length - 1], n: L.stops.length - 1 })),
-          detail: `${Math.round(first?.walk ?? 0)} min à pied jusqu'à l'arrêt, puis ${Math.round(walkEnd)} min à l'arrivée`,
-          gmode: 'transit',
-          path,
+          walkStart: first?.walk ?? 0, walkEnd: end.min, path,
         });
       }
     }
   }
 
-  if (d > 700) {
-    opts.push({
-      mode: 'bike', icon: '🚲', label: 'Vélo TBM', min: road / (TRAVEL.bikeKmh * 1000 / 60) + TRAVEL.bikeOverheadMin,
-      cost: PRICES.bike, costLabel: money(PRICES.bike), detail: 'Vélo en libre-service (station près de la gare)',
-      gmode: 'bicycling', path: [{ kind: 'bike', pts: [[HOTEL.la, HOTEL.lo], [v.la, v.lo]] }],
-    });
-  }
-  if (d > 900) {
-    const price = Math.max(PRICES.taxiMin, PRICES.taxiBase + (road / 1000) * PRICES.taxiPerKm);
-    opts.push({
-      mode: 'taxi', icon: '🚕', label: 'Taxi / VTC', min: road / (TRAVEL.taxiKmh * 1000 / 60) + TRAVEL.taxiWaitMin,
-      cost: price, costLabel: money(price), detail: 'Attente comprise, hors embouteillages',
-      gmode: 'driving', path: [{ kind: 'taxi', pts: [[HOTEL.la, HOTEL.lo], [v.la, v.lo]] }],
-    });
+  // Vélo en libre-service (sur le réseau piéton/cyclable)
+  if (w.d > 700) {
+    opts.push({ mode: 'bike', icon: '🚲', min: w.d / BIKE + TRAVEL.bikeOverheadMin, cost: PRICES.bike, m: w.d, gmode: 'bicycling', path: [{ kind: 'bike', pts: walkPts }] });
   }
 
-  // badges
+  // Taxi / VTC
+  if (w.d > 900) {
+    const dr = driveTo(v, paths);
+    const price = Math.max(PRICES.taxiMin, PRICES.taxiBase + (dr.m / 1000) * PRICES.taxiPerKm);
+    opts.push({ mode: 'taxi', icon: '🚕', min: dr.min + TRAVEL.taxiWaitMin, cost: price, m: dr.m, gmode: 'driving', path: [{ kind: 'taxi', pts: dr.pts }] });
+  }
+
+  // Voiture personnelle : jusqu'au parking public le plus proche du lieu, puis à pied
+  if (w.min > 10) {
+    let park = null, pd = Infinity;
+    for (const p of parks) {
+      const d = hav(p.la, p.lo, v.la, v.lo);
+      if (d < pd) { pd = d; park = p; }
+    }
+    if (park && pd <= TRAVEL.maxParkWalkM) {
+      const dr = driveTo(park, paths);
+      const end = walkBetween(park, v, paths);
+      opts.push({
+        mode: 'car', icon: '🚗', min: dr.min + TRAVEL.parkMin + end.min, cost: PRICES.parkingHour * 2, perHour: PRICES.parkingHour,
+        m: dr.m, parking: park.n, walkEnd: end.min, gmode: 'driving', dest: [park.la, park.lo],
+        path: [{ kind: 'car', pts: dr.pts }, { kind: 'walk', pts: end.pts }],
+      });
+    } else {
+      const dr = driveTo(v, paths);
+      opts.push({
+        mode: 'car', icon: '🚗', min: dr.min + TRAVEL.streetParkMin, cost: PRICES.parkingHour * 2, perHour: PRICES.parkingHour,
+        m: dr.m, street: true, gmode: 'driving', path: [{ kind: 'car', pts: dr.pts }],
+      });
+    }
+  }
+
+  // Badges
   const fastest = opts.reduce((a, b) => (b.min < a.min ? b : a));
   fastest.fastest = true;
   const affordable = opts.filter((o) => o.mode !== 'walk' || o.min <= 35);
   const cheapest = affordable.reduce((a, b) => (b.cost < a.cost || (b.cost === a.cost && b.min < a.min) ? b : a));
   cheapest.cheapest = true;
-  // conseil
+
+  // Conseil (clé de traduction)
+  const tram = opts.find((o) => o.mode === 'tram');
   let tip;
-  if (walk <= 12) tip = 'C’est tout près, à pied sans hésiter !';
-  else if (walk <= 20 && !opts.find((o) => o.mode === 'tram' && o.min < walk - 6)) tip = 'Une jolie balade à pied.';
-  else if (opts.find((o) => o.mode === 'tram')) tip = 'Le tram est le meilleur compromis.';
-  else tip = walk > 30 ? 'Plutôt en taxi ou à vélo.' : 'À pied ou à vélo.';
-  return { opts, tip, d };
+  if (w.min <= 12) tip = 'near';
+  else if (w.min <= 20 && !(tram && tram.min < w.min - 6)) tip = 'walk';
+  else if (tram) tip = 'tram';
+  else tip = w.min > 30 ? 'far' : 'mid';
+  return { opts, tip, d: w.d };
 }
 
-export function gmapsUrl(v, mode = 'walking') {
-  return `https://www.google.com/maps/dir/?api=1&origin=${HOTEL.la},${HOTEL.lo}&destination=${v.la},${v.lo}&travelmode=${mode}`;
+export function gmapsUrl(v, o) {
+  const dest = o?.dest || [v.la, v.lo];
+  return `https://www.google.com/maps/dir/?api=1&origin=${HOTEL.la},${HOTEL.lo}&destination=${dest[0]},${dest[1]}&travelmode=${o?.gmode || 'walking'}`;
 }
 
 export const fmtMin = (m) => {
