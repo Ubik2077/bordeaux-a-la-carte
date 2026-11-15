@@ -558,7 +558,12 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
   html, body { overflow: visible !important; background: #fff !important; height: auto; }
   body * { visibility: hidden !important; }
   .poster, .poster * { visibility: visible !important; }
-  .poster { position: fixed; left: 0; top: 0; width: 100%; }
+  .poster { position: fixed; left: 0; top: 0; width: 100%; padding: 16px 16px 12px; }
+  .poster__logo { width: 60px; height: 60px; font-size: 30px; }
+  .poster__title { font-size: 2.1rem; }
+  .poster__qr { width: 54%; }
+  .poster__scan { margin: 10px 0 6px; }
+  .poster__feat { margin-bottom: 6px; }
   .modal__backdrop, .no-print { display: none !important; }
   .modal__box { animation: none !important; box-shadow: none !important; border: 0 !important; background: none !important; }
 }
