@@ -8,7 +8,7 @@ Carte interactive style BD des **bars et restaurants de Bordeaux**, pensée pour
 - Bouton **🕒 Statut** : voir qui sera ouvert *ce midi*, *à 20h*, *à 23h* ou à une date précise
 - **Vrais itinéraires depuis l'hôtel**, calculés hors ligne sur le réseau de rues (sens uniques et rues piétonnes respectés) : à pied, tram TBM (lignes et correspondances), vélo, taxi et **voiture** (jusqu'au parking public le plus proche du lieu, puis à pied), avec durée, prix et badges « le plus rapide » / « le plus économique »
 - **Point de départ modifiable** (🚩 sous la recherche) : l'hôtel par défaut, ou ma position, un point touché sur la carte, un lieu, un arrêt de tram ou un monument. Le bouton « 🚩 Partir d'ici » dans une fiche permet d'enchaîner, par exemple le restaurant puis un bar. Le choix n'est pas mémorisé : au rechargement, on repart de l'hôtel
-- **Version anglaise** : bouton 🌐 EN / FR, toute l'app est traduite (fiches, horaires, trajets, QR code, monuments)
+- **5 langues** : français, anglais, espagnol, italien et allemand (menu 🌐). La langue du téléphone est choisie automatiquement, et toute l'app est traduite : fiches, horaires, trajets, QR code, monuments, aide. La recherche comprend les cinq langues (« marisco », « Weinbar »…)
 - **QR code** : le client scanne et repart avec l'itinéraire Google Maps sur son téléphone
 - **🎲 Surprends-moi !** : tirage au sort parmi les résultats
 - **Notes de l'équipe** : étoiles, coups de cœur ❤️, prix corrigé, commentaire, masquer un lieu, **synchronisées en direct** entre tous les postes (Google Sheets)
@@ -130,7 +130,7 @@ Dans [js/config.js](js/config.js) :
 - `CLOSING_SOON_MIN` : minutes avant la fermeture où le voyant passe à l'orange (60 par défaut)
 - `TRAVEL` / `PRICES` : vitesses et tarifs utilisés pour les estimations (ticket TBM, taxi, parking…)
 
-Les textes français et anglais sont dans [js/i18n.js](js/i18n.js).
+Les textes français et anglais sont dans [js/i18n.js](js/i18n.js), l'espagnol, l'italien et l'allemand dans [js/lang/](js/lang/).
 - `TYPES`, `CUISINES` : libellés, couleurs et icônes
 
 ## 🧪 Tester en local
@@ -161,7 +161,8 @@ js/basemap.js                              dessin du plan (Garonne, rues, parcs,
 js/hours.js                                lecture des horaires OSM, statut ouvert/fermé
 js/routing.js                              trajets (marche, tram, vélo, taxi, voiture + parking)
 js/graph.js                                moteur d'itinéraires hors ligne sur le réseau de rues
-js/i18n.js                                 traductions français / anglais
+js/i18n.js                                 traductions français / anglais, formats, menu des langues
+js/lang/                                   traductions espagnol, italien, allemand
 js/sync.js                                 synchronisation des notes avec Google Sheets
 scripts/google-apps-script/Code.gs         script à coller dans Google Sheets (notes partagées)
 js/config.js                               réglages

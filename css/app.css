@@ -477,6 +477,18 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
 .settings .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .credits { font-size: .78rem; max-height: 140px; overflow-y: auto; background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; }
 
+/* ---------- Menu des langues ---------- */
+.lang-wrap { position: relative; }
+.lang-menu {
+  position: absolute; z-index: 50; top: calc(100% + 6px); right: 0; min-width: 160px; display: flex; flex-direction: column; gap: 2px;
+  background: #fff; border: var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 6px; animation: cardIn .25s var(--boing); transform-origin: top right;
+}
+.lang-menu button { display: flex; align-items: center; gap: 10px; border: 0; background: none; border-radius: 10px; padding: .4em .7em; font-weight: 700; text-align: left; }
+.lang-menu button span { font-size: 1.2rem; }
+.lang-menu button:hover { background: #fff3b0; }
+.lang-menu button.on { background: var(--yellow); }
+.poster__more { margin: -6px 0 10px; font-size: .78rem; font-weight: 700; }
+
 /* ---------- Point de départ ---------- */
 .origin-btn {
   display: flex; align-items: center; gap: 6px; margin: 0 16px 8px; padding: .3em .8em; border: 2px solid var(--ink); border-radius: 999px;
@@ -666,6 +678,7 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
   .detail { top: auto; height: 68vh; height: 68dvh; border-left: 0; border-top: var(--border); border-radius: 22px 22px 0 0; transform: translateY(105%); z-index: 40; }
   .detail.open { transform: translateY(0); }
   .detail__photo { border-radius: 19px 19px 0 0; }
+  .lang-menu { top: auto; bottom: calc(100% + 6px); transform-origin: bottom right; }
   .origin-banner { top: auto; bottom: 246px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 24px); animation: none; }
   .when-banner { top: auto; bottom: 210px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 24px); white-space: nowrap; font-size: .95rem; }
   .toast { bottom: 210px; }

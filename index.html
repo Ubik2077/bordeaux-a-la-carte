@@ -33,7 +33,10 @@
           <h1><span data-i18n="brand.a">Bordeaux</span> <span class="brand__b" data-i18n="brand.b">à la carte !</span></h1>
         </div>
         <div class="brand__btns">
-          <button id="langBtn" class="btn btn--small" data-i18n="lang.btn" data-i18n-title="lang.title">🌐 EN</button>
+          <div class="lang-wrap">
+            <button id="langBtn" class="btn btn--small" data-i18n-title="lang.title" aria-haspopup="true" aria-expanded="false">🌐 FR ▾</button>
+            <div id="langMenu" class="lang-menu" role="menu" hidden></div>
+          </div>
           <button id="installBtn" class="btn btn--small btn--pop" data-i18n="install" hidden>⬇ Installer</button>
         </div>
       </header>

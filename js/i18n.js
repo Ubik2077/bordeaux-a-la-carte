@@ -1,9 +1,22 @@
-// Traductions français / anglais.
-// t('clé', { variable: valeur }) renvoie le texte dans la langue active.
+// Traductions : français et anglais ici, espagnol / italien / allemand dans js/lang/.
+// t('clé', { variable: valeur }) renvoie le texte dans la langue active
+// (à défaut : anglais, puis français).
+import es from './lang/es.js';
+import it from './lang/it.js';
+import de from './lang/de.js';
+
+// Langues proposées dans le menu 🌐
+export const LANGS = [
+  { code: 'fr', name: 'Français', flag: '🇫🇷', locale: 'fr-FR' },
+  { code: 'en', name: 'English', flag: '🇬🇧', locale: 'en-GB' },
+  { code: 'es', name: 'Español', flag: '🇪🇸', locale: 'es-ES' },
+  { code: 'it', name: 'Italiano', flag: '🇮🇹', locale: 'it-IT' },
+  { code: 'de', name: 'Deutsch', flag: '🇩🇪', locale: 'de-DE' },
+];
 
 const D = {
   fr: {
-    'lang.btn': '🌐 EN', 'lang.title': 'Switch to English',
+    'lang.title': 'Changer de langue',
     'brand.a': 'Bordeaux', 'brand.b': 'à la carte !', 'brand.from': 'Départ :',
     'install': '⬇ Installer',
     'search.ph': 'Nom, cuisine, rue…', 'search.label': 'Rechercher', 'clear': 'Effacer',
@@ -96,8 +109,9 @@ const D = {
       'Filtrez par <b>type</b>, <b>cuisine</b>, <b>prix</b> ou <b>ouvert maintenant</b>. « 🕒 20h » montre ce qui sera ouvert ce soir.',
       '<b>❤️ Coups de cœur de l’hôtel</b> : les adresses que notre équipe recommande.',
       '<b>📍</b> affiche votre position quand vous êtes en ville.',
+      '<b>🚩 Départ</b> : changez le point de départ des trajets (l’hôtel, votre position, un lieu…).',
       '« 🗺️ Y aller » ouvre l’itinéraire dans Google Maps, « 📤 Partager » envoie l’adresse à vos proches.',
-      '<b>🌐 EN</b> : English version.',
+      '<b>🌐</b> : changez la langue (English, español, italiano, Deutsch).',
     ],
     'c.offline': 'Installez l’app pour la garder sur votre téléphone : elle fonctionne même sans connexion (pratique à l’étranger).',
     'c.dataText': '{n} lieux issus d’OpenStreetMap (mise à jour du {d}). Horaires et prix indicatifs : en cas de doute, appelez avant de vous déplacer. Une question ? Demandez à la réception !',
@@ -110,7 +124,8 @@ const D = {
       '<b>Double-cliquez</b> une catégorie pour n’afficher qu’elle.',
       '« 🕒 Statut » : vérifiez qui sera ouvert <b>ce soir à 20h</b> ou à une date précise.',
       '« 📱 QR code » : le client repart avec l’itinéraire sur son téléphone.',
-      '« 🌐 EN » : passez l’app en anglais pour la montrer à un client étranger.',
+      '« 🚩 Départ » : changez le point de départ des trajets.',
+      '« 🌐 » : changez la langue pour la montrer à un client étranger (English, español, italiano, Deutsch).',
       'Touche <b>/</b> pour chercher, <b>Échap</b> pour fermer.',
     ],
     'sy.title': '🔄 Notes synchronisées',
@@ -165,7 +180,7 @@ const D = {
   },
 
   en: {
-    'lang.btn': '🌐 FR', 'lang.title': 'Passer en français',
+    'lang.title': 'Change language',
     'brand.a': 'Bordeaux', 'brand.b': 'à la carte!', 'brand.from': 'Starting point:',
     'install': '⬇ Install',
     'search.ph': 'Name, cuisine, street…', 'search.label': 'Search', 'clear': 'Clear',
@@ -258,8 +273,9 @@ const D = {
       'Filter by <b>type</b>, <b>cuisine</b>, <b>price</b> or <b>open now</b>. “🕒 8 pm” shows what will be open tonight.',
       '<b>❤️ Hotel picks</b>: places our team recommends.',
       '<b>📍</b> shows where you are when you’re out in town.',
+      '<b>🚩 From</b>: change the starting point of the directions (the hotel, your location, a place…).',
       '“🗺️ Go there” opens directions in Google Maps, “📤 Share” sends the place to friends.',
-      '<b>🌐 FR</b>: version française.',
+      '<b>🌐</b>: change language (français, español, italiano, Deutsch).',
     ],
     'c.offline': 'Install the app to keep it on your phone: it even works without a connection (handy when abroad).',
     'c.dataText': '{n} places from OpenStreetMap (updated {d}). Hours and prices are indicative: if in doubt, call ahead. Any questions? Ask at the front desk!',
@@ -272,7 +288,8 @@ const D = {
       '<b>Double-click</b> a category to show only that one.',
       '“🕒 Status”: check what will be open <b>tonight at 8 pm</b> or at any date.',
       '“📱 QR code”: the guest leaves with the directions on their phone.',
-      '“🌐 FR”: switch the app back to French.',
+      '“🚩 From”: change the starting point of the directions.',
+      '“🌐”: change language (français, English, español, italiano, Deutsch).',
       'Press <b>/</b> to search, <b>Esc</b> to close.',
     ],
     'sy.title': '🔄 Synced notes',
@@ -325,12 +342,20 @@ const D = {
       'Otherwise: <span class="kbd">⋮</span> menu → <b>“Cast, save, and share”</b> → <b>“Install page as app…”</b>.',
       'Click <b>“Install”</b>. The app opens in its own window and can be pinned to the taskbar.'],
   },
+  es, it, de,
 };
 
+const CODES = LANGS.map((l) => l.code);
 let lang = (() => {
-  try { const s = localStorage.getItem('cb.lang'); if (s === 'fr' || s === 'en') return s; } catch { /* stockage indisponible */ }
-  return (navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en';
+  try { const s = localStorage.getItem('cb.lang'); if (CODES.includes(s)) return s; } catch { /* stockage indisponible */ }
+  // langue du téléphone / de l'ordinateur, sinon anglais
+  for (const l of navigator.languages || [navigator.language || 'fr']) {
+    const c = String(l).toLowerCase().slice(0, 2);
+    if (CODES.includes(c)) return c;
+  }
+  return 'en';
 })();
+export const getLocale = () => LANGS.find((l) => l.code === lang).locale;
 
 export const getLang = () => lang;
 export function setLang(l) {
@@ -340,21 +365,24 @@ export function setLang(l) {
 }
 
 export function t(key, vars) {
-  let s = D[lang][key] ?? D.fr[key] ?? key;
+  let s = D[lang][key] ?? D.en[key] ?? D.fr[key] ?? key;
   if (vars && typeof s === 'string') s = s.replace(/\{(\w+)\}/g, (m, k) => (vars[k] ?? ''));
   return s;
 }
 
+// Texte dans une langue précise, sans changer la langue active (recherche multilingue)
+export function tIn(l, key) { return D[l]?.[key] ?? D.en[key] ?? D.fr[key] ?? key; }
+
 // Formats dépendant de la langue
 export function fmtTime(min) {
   const h = Math.floor(min / 60) % 24, m = min % 60;
-  if (lang === 'en') return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  return `${h}h${m ? String(m).padStart(2, '0') : ''}`;
+  if (lang === 'fr') return `${h}h${m ? String(m).padStart(2, '0') : ''}`;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 export function fmtMoney(x) {
   if (x === 0) return t('free');
   const n = x.toFixed(x < 10 ? 2 : 0);
-  return lang === 'en' ? `≈ €${n.replace('.00', '')}` : `≈ ${n.replace('.', ',').replace(',00', '')} €`;
+  return lang === 'en' ? `≈ €${n.replace('.00', '')}` : `≈ ${n.replace('.', ',').replace(',00', '')} €`; // 1,90 € en fr/es/it/de
 }
 export function fmtDist(m) {
   if (m < 1000) return `${Math.round(m / 10) * 10} m`;
@@ -364,7 +392,7 @@ export function fmtDist(m) {
 export function fmtDate(iso) {
   if (!iso) return '?';
   const [y, mo, d] = iso.split('-');
-  return lang === 'en' ? `${d}/${mo}/${y}` : `${d}/${mo}/${y}`;
+  return lang === 'de' ? `${d}.${mo}.${y}` : `${d}/${mo}/${y}`;
 }
 
 // Applique les traductions aux éléments statiques de la page (attributs data-i18n*)

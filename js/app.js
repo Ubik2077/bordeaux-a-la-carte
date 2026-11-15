@@ -3,7 +3,7 @@ import { HOTEL, TYPES, TYPE_FILTERS, DEFAULT_TYPES, CUISINES, LANDMARKS } from '
 import { hoursStatus, weekTable, parseHours } from './hours.js';
 import { initRouting, travelOptions, walkInfo, gmapsUrl, fmtMin, setOrigin, getOrigin } from './routing.js';
 import { drawBasemap, setLandmarkLang } from './basemap.js';
-import { t, getLang, setLang, applyStatic, fmtMoney, fmtDist, fmtDate } from './i18n.js';
+import { t, tIn, getLang, setLang, applyStatic, fmtMoney, fmtDist, fmtDate, fmtTime, getLocale, LANGS } from './i18n.js';
 import { sync, fetchPublicNotes } from './sync.js';
 
 const L = window.L;
@@ -173,24 +173,33 @@ async function init() {
 
 const hotelIcon = () => L.divIcon({ className: 'hotel-pin', iconSize: [0, 0], html: `<div class="h">🏨</div><div class="bubble">${t(getOrigin().kind !== 'hotel' ? 'hotel.name' : CLIENT ? 'hotel.bubbleClient' : 'hotel.bubble')}</div>` });
 
-// Recherche : on indexe les libellés dans les deux langues
+// Recherche : on indexe les libellés dans toutes les langues (« pizza », « marisco », « Weinbar »…)
 function buildSearchIndex() {
-  const lang = getLang();
-  const labels = (v) => {
-    const out = [];
-    for (const l of ['fr', 'en']) {
-      setLang(l);
-      out.push(t('type.' + v.t), v.c ? t('cui.' + v.c) : '');
-    }
-    return out.join(' ');
-  };
+  const labels = (v) => LANGS.map(({ code }) => `${tIn(code, 'type.' + v.t)} ${v.c ? tIn(code, 'cui.' + v.c) : ''}`).join(' ');
   for (const v of venues) v.search = norm(`${v.n} ${labels(v)} ${v.cr || ''} ${v.a || ''}`);
-  setLang(lang);
 }
 
+// Nom d'un monument dans la langue active
+const lmName = (l) => l[getLang()] || (getLang() !== 'fr' && l.en) || l.n;
+
 // ------------------------------------------------------------------ Langue
-function switchLang() {
-  setLang(getLang() === 'fr' ? 'en' : 'fr');
+function updateLangBtn() {
+  $('#langBtn').textContent = `🌐 ${getLang().toUpperCase()} ▾`;
+}
+function toggleLangMenu(force) {
+  const menu = $('#langMenu');
+  const open = force ?? menu.hidden;
+  if (open) {
+    menu.innerHTML = LANGS.map((l) => `<button data-lang="${l.code}" class="${l.code === getLang() ? 'on' : ''}" lang="${l.code}"><span>${l.flag}</span>${l.name}</button>`).join('');
+  }
+  menu.hidden = !open;
+  $('#langBtn').setAttribute('aria-expanded', String(open));
+}
+function switchLang(code) {
+  toggleLangMenu(false);
+  if (!code || code === getLang()) return;
+  setLang(code);
+  updateLangBtn();
   applyStatic();
   buildWalkOptions();
   buildFilterUI();
@@ -289,7 +298,7 @@ function refreshStatuses() {
   else {
     const d = statusDate();
     b.hidden = false;
-    b.textContent = t('banner', { d: t('days')[(d.getDay() + 6) % 7], t: getLang() === 'en' ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : `${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}` });
+    b.textContent = t('banner', { d: t('days')[(d.getDay() + 6) % 7], t: fmtTime(d.getHours() * 60 + d.getMinutes()) });
   }
 }
 
@@ -476,7 +485,10 @@ const toggleSet = (set, k) => (set.has(k) ? set.delete(k) : set.add(k));
 const pop = (el) => { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); };
 
 function bindUI() {
-  $('#langBtn').addEventListener('click', switchLang);
+  updateLangBtn();
+  $('#langBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleLangMenu(); });
+  $('#langMenu').addEventListener('click', (e) => { const b = e.target.closest('[data-lang]'); if (b) switchLang(b.dataset.lang); });
+  document.addEventListener('click', (e) => { if (!$('#langMenu').hidden && !e.target.closest('#langMenu')) toggleLangMenu(false); });
   $('#typeChips').addEventListener('click', (e) => {
     const b = e.target.closest('.chip'); if (!b) return;
     toggleSet(state.types, b.dataset.type);
@@ -567,7 +579,8 @@ function bindUI() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (pickingOrigin) cancelPick();
+      if (!$('#langMenu').hidden) toggleLangMenu(false);
+      else if (pickingOrigin) cancelPick();
       else if (!$('#modal').hidden) closeModal();
       else if (selected) closeDetail();
     }
@@ -710,7 +723,7 @@ function renderDetail(v, { keepRoute = false } = {}) {
         </label>
         <textarea id="staffNote" placeholder="${esc(t('d.staffPh'))}">${esc(s.note || '')}</textarea>
         <label><input type="checkbox" id="staffHidden" ${s.hidden ? 'checked' : ''}> ${t('d.staffHide')}</label>
-        ${sync.active ? `<p class="raw">${s.at ? t('sy.lastEdit', { by: esc(s.by || '?'), d: new Date(s.at).toLocaleString(getLang() === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }) : ''} ${t('sy.shared')}</p>` : ''}
+        ${sync.active ? `<p class="raw">${s.at ? t('sy.lastEdit', { by: esc(s.by || '?'), d: new Date(s.at).toLocaleString(getLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }) : ''} ${t('sy.shared')}</p>` : ''}
       </div>`}
       <p class="src">${t('d.src', { u: osmUrl })}</p>
     </div>`;
@@ -1065,7 +1078,7 @@ function onPickClick(e) {
 function buildOriginIndex() {
   const lang = getLang();
   const items = [];
-  for (const l of LANDMARKS) items.push({ icon: l.i, label: lang === 'en' ? l.en || l.n : l.n, sub: '', la: l.la, lo: l.lo });
+  for (const l of LANDMARKS) items.push({ icon: l.i, label: lmName(l), sub: '', la: l.la, lo: l.lo });
   const seen = new Set();
   for (const lm of tramStops) {
     if (seen.has(lm.name)) continue; seen.add(lm.name);
@@ -1090,7 +1103,7 @@ function openOriginPicker() {
     <div class="search origin-search"><span class="search__icon" aria-hidden="true">🔎</span><input id="originQ" type="search" autocomplete="off" placeholder="${esc(t('origin.ph'))}"></div>
     <ul class="origin-results" id="originRes"></ul>
     <p class="origin-quick-title">${t('origin.quick')}</p>
-    <div class="chips" id="originQuick">${LANDMARKS.slice(0, 10).map((l, i) => `<button class="chip" data-lm="${i}">${l.i} ${esc(getLang() === 'en' ? l.en || l.n : l.n)}</button>`).join('')}</div>`);
+    <div class="chips" id="originQuick">${LANDMARKS.slice(0, 10).map((l, i) => `<button class="chip" data-lm="${i}">${l.i} ${esc(lmName(l))}</button>`).join('')}</div>`);
   let found = [];
   $('#originQ').oninput = (e) => {
     const q = norm(e.target.value.trim());
@@ -1111,7 +1124,7 @@ function openOriginPicker() {
   $('#originQuick').onclick = (e) => {
     const b = e.target.closest('[data-lm]'); if (!b) return;
     const l = LANDMARKS[+b.dataset.lm];
-    changeOrigin({ la: l.la, lo: l.lo, kind: 'place', label: getLang() === 'en' ? l.en || l.n : l.n });
+    changeOrigin({ la: l.la, lo: l.lo, kind: 'place', label: lmName(l) });
   };
   $('.origin-main').onclick = (e) => {
     const b = e.target.closest('[data-o]'); if (!b) return;
@@ -1152,6 +1165,7 @@ function openPoster() {
       <div class="poster__logo">🍽️</div>
       <h2 class="poster__title">Où manger & boire<br>à Bordeaux ?</h2>
       <p class="poster__en">Where to eat & drink in Bordeaux?</p>
+      <p class="poster__more">¿Dónde comer y beber? · Dove mangiare e bere? · Wo essen & trinken?</p>
       <div class="poster__qr">${qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true })}</div>
       <p class="poster__scan">📱 Scannez avec l’appareil photo<br><i>Scan with your phone camera</i></p>
       <ul class="poster__feat">
@@ -1159,7 +1173,7 @@ function openPoster() {
         <li>🟢 Ouvert maintenant · <i>Open now</i></li>
         <li>🚶🚋🚗 Trajets depuis l’hôtel · <i>Directions from the hotel</i></li>
         <li>❤️ Nos coups de cœur · <i>Our favourites</i></li>
-        <li>🇫🇷 🇬🇧 · 📴 hors ligne · <i>works offline</i></li>
+        <li>🇫🇷 🇬🇧 🇪🇸 🇮🇹 🇩🇪 · 📴 hors ligne · <i>works offline</i></li>
       </ul>
       <p class="poster__foot">🏨 ${esc(HOTEL.name)}</p>
     </div>
