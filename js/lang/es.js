@@ -1,6 +1,10 @@
 // Español
 export default {
   'lang.title': 'Cambiar idioma',
+  'cartes.bouton': "🗺️ Otros mapas ▾",
+  'cartes.titre': "Nuestros otros mapas",
+  'cartes.lune': "Monumentos históricos en 3D",
+  'cartes.canele': "Museos, familias y compras, en 8 bits",
   'brand.a': 'Bordeaux', 'brand.b': 'à la carte!', 'brand.from': 'Punto de partida:',
   'install': '⬇ Instalar',
   'search.ph': 'Nombre, cocina, calle…', 'search.label': 'Buscar', 'clear': 'Borrar',

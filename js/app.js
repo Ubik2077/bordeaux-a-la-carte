@@ -487,6 +487,18 @@ const pop = (el) => { el.classList.remove('pop'); void el.offsetWidth; el.classL
 function bindUI() {
   updateLangBtn();
   $('#langBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleLangMenu(); });
+  // nos autres cartes : la langue choisie suit (lien « ?lang=xx »)
+  const toggleMapsMenu = (force) => {
+    const menu = $('#mapsMenu'), open = force ?? menu.hidden;
+    if (open) {
+      toggleLangMenu(false);
+      for (const a of menu.querySelectorAll('[data-carte]')) { const u = new URL(a.href); u.searchParams.set('lang', getLang()); a.href = u.href; }
+    }
+    menu.hidden = !open;
+    $('#mapsBtn').setAttribute('aria-expanded', String(open));
+  };
+  $('#mapsBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleMapsMenu(); });
+  document.addEventListener('click', (e) => { if (!$('#mapsMenu').hidden && !e.target.closest('.maps-wrap')) toggleMapsMenu(false); });
   $('#langMenu').addEventListener('click', (e) => { const b = e.target.closest('[data-lang]'); if (b) switchLang(b.dataset.lang); });
   document.addEventListener('click', (e) => { if (!$('#langMenu').hidden && !e.target.closest('#langMenu')) toggleLangMenu(false); });
   $('#typeChips').addEventListener('click', (e) => {

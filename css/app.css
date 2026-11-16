@@ -487,6 +487,13 @@ select { border: 2px solid var(--ink); border-radius: 10px; background: var(--wh
 .lang-menu button span { font-size: 1.2rem; }
 .lang-menu button:hover { background: #fff3b0; }
 .lang-menu button.on { background: var(--yellow); }
+/* nos autres cartes : même menu, avec des liens */
+.maps-menu { min-width: 230px; }
+.maps-menu p { margin: 4px .7em 2px; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+.maps-menu a { display: flex; flex-direction: column; gap: 1px; padding: .45em .7em; border-radius: 10px; color: inherit; text-decoration: none; }
+.maps-menu a b { font-size: 1rem; }
+.maps-menu a span { font-size: .82rem; }
+.maps-menu a:hover, .maps-menu a:focus-visible { background: #fff3b0; }
 .poster__more { margin: -6px 0 10px; font-size: .78rem; font-weight: 700; }
 
 /* ---------- Point de départ ---------- */

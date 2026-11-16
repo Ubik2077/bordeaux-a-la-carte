@@ -17,6 +17,10 @@ export const LANGS = [
 const D = {
   fr: {
     'lang.title': 'Changer de langue',
+    'cartes.bouton': "🗺️ Autres cartes ▾",
+    'cartes.titre': "Nos autres cartes",
+    'cartes.lune': "Monuments historiques, en 3D",
+    'cartes.canele': "Musées, familles et shopping, en 8 bits",
     'brand.a': 'Bordeaux', 'brand.b': 'à la carte !', 'brand.from': 'Départ :',
     'install': '⬇ Installer',
     'search.ph': 'Nom, cuisine, rue…', 'search.label': 'Rechercher', 'clear': 'Effacer',
@@ -181,6 +185,10 @@ const D = {
 
   en: {
     'lang.title': 'Change language',
+    'cartes.bouton': "🗺️ Other maps ▾",
+    'cartes.titre': "Our other maps",
+    'cartes.lune': "Historic monuments in 3D",
+    'cartes.canele': "Museums, families and shopping, in 8-bit",
     'brand.a': 'Bordeaux', 'brand.b': 'à la carte!', 'brand.from': 'Starting point:',
     'install': '⬇ Install',
     'search.ph': 'Name, cuisine, street…', 'search.label': 'Search', 'clear': 'Clear',
@@ -347,6 +355,9 @@ const D = {
 
 const CODES = LANGS.map((l) => l.code);
 let lang = (() => {
+  // langue transmise par une autre de nos cartes (lien « ?lang=en ») : prioritaire
+  const param = new URLSearchParams(location.search).get('lang');
+  if (CODES.includes(param)) return param;
   try { const s = localStorage.getItem('cb.lang'); if (CODES.includes(s)) return s; } catch { /* stockage indisponible */ }
   // langue du téléphone / de l'ordinateur, sinon anglais
   for (const l of navigator.languages || [navigator.language || 'fr']) {
