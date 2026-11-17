@@ -4,7 +4,7 @@ export default {
   'cartes.bouton': "🗺️ Altre mappe ▾",
   'cartes.titre': "Le nostre altre mappe",
   'cartes.lune': "Monumenti storici in 3D",
-  'cartes.canele': "Musei, famiglie e shopping, in 8 bit",
+  'cartes.miniature': "Musei, famiglie e shopping, in plastico",
   'brand.a': 'Bordeaux', 'brand.b': 'à la carte!', 'brand.from': 'Punto di partenza:',
   'install': '⬇ Installa',
   'search.ph': 'Nome, cucina, via…', 'search.label': 'Cerca', 'clear': 'Cancella',
