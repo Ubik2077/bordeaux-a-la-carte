@@ -71,6 +71,12 @@ Une version **pour les clients**, sans les outils de la réception, à leur part
 - Les clients voient vos **❤️ coups de cœur** et vos **étoiles** (« Recommandé par la réception »), jamais vos commentaires internes,
   et les lieux que vous avez masqués n'apparaissent pas.
 - **Affiche à imprimer** : ⚙️ Réglages → **📱 Version clients → 🖨️ Affiche QR pour les clients** (format A5, bilingue).
+- **Grandes affiches pour l'accueil** : [affiche-bordeaux-a-la-carte-a3.pdf](affiche-bordeaux-a-la-carte-a3.pdf) (A3, comptoir) et
+  [affiche-bordeaux-a-la-carte-a2.pdf](affiche-bordeaux-a-la-carte-a2.pdf) (A2, mur) : le plan BD avec tous les lieux en points de couleur,
+  9 quartiers gourmands décrits (ambiance, nombre d'adresses, accès depuis l'hôtel) et le QR code de la version clients.
+  Aucun nom d'établissement, pour qu'elles ne vieillissent pas. Textes en français suivis de l'anglais, sauf les descriptions des quartiers.
+  Source : [affiche-quartiers.html](affiche-quartiers.html) (`?a2` pour l'A2 ; les quartiers et leurs textes sont en haut du script).
+  Après une mise à jour des lieux, `sh scripts/affiche-quartiers.sh` (site lancé en local sur le port 8642) regénère les deux PDF.
 - Le téléphone du client mémorise le mode client, même une fois l'app installée. Sur un poste de la réception,
   utilisez le bouton « 👀 Aperçu », qui ne change pas de mode. Pour revenir à la version réception : ajoutez `?reception` à l'adresse.
 
